@@ -308,6 +308,49 @@
       root.style.setProperty('--poster-title-width', `${Number(copy.titleMaxWidth || 860)}px`);
       root.style.setProperty('--poster-subtitle-size', `${Number(copy.subtitleFontSize || 46)}px`);
       root.style.setProperty('--poster-subtitle-line-height', String(copy.subtitleLineHeight || 1.3));
+
+      fitTitle(copy);
+    }
+
+    // 大标题自适应：若超出两行则缩小字号，确保两行内完整显示
+    function fitTitle(copy) {
+      const root = document.getElementById('poster');
+      const titleEl = document.getElementById('poster-title');
+      if (!root || !titleEl) return;
+
+      const baseFontSize = Number(copy.titleFontSize || 86);
+      const lineHeight = Number(copy.titleLineHeight || 1.15);
+      const maxH = (fs) => Math.ceil(fs * lineHeight * 2) + 4;
+
+      root.style.setProperty('--poster-title-size', `${baseFontSize}px`);
+      titleEl.style.maxHeight = 'none';
+      void titleEl.offsetHeight;
+      if (titleEl.scrollHeight <= maxH(baseFontSize)) {
+        titleEl.style.maxHeight = `${maxH(baseFontSize)}px`;
+        titleEl.style.overflow = 'hidden';
+        return;
+      }
+
+      let lo = Math.max(36, Math.round(baseFontSize * 0.5));
+      let hi = baseFontSize;
+      let chosen = lo;
+
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        root.style.setProperty('--poster-title-size', `${mid}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        if (titleEl.scrollHeight <= maxH(mid)) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+
+      root.style.setProperty('--poster-title-size', `${chosen}px`);
+      titleEl.style.maxHeight = `${maxH(chosen)}px`;
+      titleEl.style.overflow = 'hidden';
     }
 
     function renderGames(games) {

@@ -69,9 +69,8 @@
       font-weight: 800;
       line-height: var(--title-line-height);
       letter-spacing: 0;
+      word-break: break-word;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     .subtitle {
@@ -434,9 +433,51 @@
       }).join('');
     }
 
+    // 大标题自适应：若超出两行则缩小字号，确保两行内完整显示
+    function fitTitle() {
+      const poster = document.getElementById('poster');
+      const titleEl = document.getElementById('title');
+      const baseFontSize = Number(copy.titleFontSize || 110);
+      const lineHeight = Number(copy.titleLineHeight || 1.2);
+      const maxLines = 2;
+
+      const maxH = (fs) => Math.ceil(fs * lineHeight * maxLines) + 4;
+
+      let lo = Math.max(36, Math.round(baseFontSize * 0.5));
+      let hi = baseFontSize;
+      let chosen = baseFontSize;
+
+      // 先检查原字号是否已经够用，够的话直接跳过搜索
+      poster.style.setProperty('--title-size', `${hi}px`);
+      titleEl.style.maxHeight = 'none';
+      void titleEl.offsetHeight; // 触发 reflow
+      if (titleEl.scrollHeight <= maxH(hi)) {
+        titleEl.style.maxHeight = `${maxH(hi)}px`;
+        return;
+      }
+
+      // 二分查找：找到能放入两行的最大字号
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        poster.style.setProperty('--title-size', `${mid}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        if (titleEl.scrollHeight <= maxH(mid)) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+
+      poster.style.setProperty('--title-size', `${chosen}px`);
+      titleEl.style.maxHeight = `${maxH(chosen)}px`;
+    }
+
     function render() {
       const lang = resolveLang();
       renderHeader(lang);
+      fitTitle();
       renderBrand();
       renderCards(lang);
     }

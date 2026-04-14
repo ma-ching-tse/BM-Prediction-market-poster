@@ -38,12 +38,14 @@ const TEMPLATE_CONFIGS = {
   classic: {
     aliases: ['classic', 'default', '标准', '默认'],
     file: path.join(BASE_DIR, 'poster.html'),
-    outputPrefix: 'NBA'
+    outputPrefix: 'NBA',
+    outputSubDir: 'NBA'
   },
   comprehensive: {
     aliases: ['comprehensive', 'event', '综合事件', '综合事件模版'],
     file: path.join(BASE_DIR, 'poster.comprehensive-event.html'),
-    outputPrefix: 'NBA_综合事件'
+    outputPrefix: '综合事件',
+    outputSubDir: '综合事件'
   }
 };
 
@@ -1325,9 +1327,11 @@ function scanBgFiles() {
   return bgFiles;
 }
 
-function prepareOutputDir(date) {
-  const dateDir = path.join(OUTPUT_DIR, date);
+function prepareOutputDir(date, subDir) {
+  const subDirPath = path.join(OUTPUT_DIR, subDir);
+  const dateDir = path.join(subDirPath, date);
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+  if (!fs.existsSync(subDirPath)) fs.mkdirSync(subDirPath);
   if (!fs.existsSync(dateDir)) fs.mkdirSync(dateDir);
   return dateDir;
 }
@@ -1379,7 +1383,7 @@ async function main() {
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const dateDir = prepareOutputDir(date);
+    const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
     const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
 
     const browser = await launchBrowser();
@@ -1426,7 +1430,7 @@ async function main() {
 
   const bgFiles = scanBgFiles();
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const dateDir = prepareOutputDir(date);
+  const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
   const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
 
   const browser = await launchBrowser();
