@@ -1201,75 +1201,48 @@ async function fetchComprehensiveEventsFromLark(config, accessToken) {
   };
 }
 
-// ── 综合事件：调用 Claude API 翻译 ──────────────────────────
-async function translateComprehensiveData(sourceData, targetLangs, apiKey) {
-  const langLabels = {
-    'zh-TW': '繁體中文（台灣）',
-    'en': 'English',
-    'ja': '日本語',
-    'es': 'Español',
-    'pt': 'Português',
-    'de': 'Deutsch',
-    'fr': 'Français',
-    'vi': 'Tiếng Việt'
-  };
-
-  const targets = targetLangs.map(l => `${l}（${langLabels[l] || l}）`).join('、');
-
-  const prompt = `你是一名专业的本地化翻译员，专注于加密货币交易平台的营销文案翻译。
-
-请将以下简体中文内容翻译成：${targets}
-
-原始内容：
-${JSON.stringify(sourceData, null, 2)}
-
-翻译要求：
-- mainTitle：海报主标题，语气要吸引人，简洁有力
-- subTitle：副标题，自然流畅
-- footer：产品引导文案，简短清晰
-- cards[].text：预测市场问题，保持问句形式
-- cards[].percent：直接复制原值，不翻译
-- 不修改 JSON 结构和字段名
-- 直接输出 JSON，不要加任何解释
-
-输出格式（只输出这个 JSON 对象）：
-{
-  "zh-TW": { "mainTitle": "...", "subTitle": "...", "footer": "...", "cards": [{"text": "...", "percent": 72}, ...] },
-  "en": { ... }
-}`;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
-
+// ── 综合事件：调用 MyMemory 免费翻译（无需 API Key）──────────
+async function translateOneText(text, fromLang, toLang) {
+  if (!text) return text;
+  const params = new URLSearchParams({ q: text, langpair: `${fromLang}|${toLang}` });
+  const res = await fetch(`https://api.mymemory.translated.net/get?${params}`);
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Claude 翻译 API 失败：HTTP ${res.status}，${text.slice(0, 200)}`);
+    throw new Error(`MyMemory 翻译请求失败（${fromLang}→${toLang}）：HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  if (data.responseStatus !== 200) {
+    throw new Error(`MyMemory 翻译失败（${fromLang}→${toLang}）：${data.responseDetails}`);
+  }
+  return String(data.responseData?.translatedText ?? text);
+}
+
+async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'zh-CN') {
+  // 需要翻译的文本：标题、副标题、footer、3 张卡片问题
+  const texts = [
+    sourceData.mainTitle,
+    sourceData.subTitle,
+    sourceData.footer,
+    ...sourceData.cards.map(c => c.text)
+  ];
+
+  const result = {};
+
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    result[lang] = {
+      mainTitle: translated[0],
+      subTitle: translated[1],
+      footer: translated[2],
+      cards: sourceData.cards.map((card, i) => ({
+        text: translated[3 + i],
+        percent: card.percent
+      }))
+    };
+    console.log(' ✅');
   }
 
-  const result = await res.json();
-  const raw = result.content?.[0]?.text ?? '';
-
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('Claude 翻译返回格式异常：未找到 JSON 块');
-  }
-
-  try {
-    return JSON.parse(jsonMatch[0]);
-  } catch (e) {
-    throw new Error(`Claude 翻译返回的 JSON 解析失败：${e.message}\n内容片段：${raw.slice(0, 300)}`);
-  }
+  return result;
 }
 
 // ── 综合事件：构建海报 payload ──────────────────────────────
@@ -1399,17 +1372,9 @@ async function main() {
     let translationsMap = { [sourceLang]: sourceData };
 
     if (targetLangs.length > 0) {
-      const apiKey = larkConfig.anthropicApiKey || String(process.env.ANTHROPIC_API_KEY ?? '').trim();
-      if (!apiKey) {
-        throw new Error(
-          '需要 Anthropic API Key 进行多语言翻译，' +
-          '请在 lark.config.json 的 anthropicApiKey 字段或环境变量 ANTHROPIC_API_KEY 中配置'
-        );
-      }
       console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
-      const translated = await translateComprehensiveData(sourceData, targetLangs, apiKey);
+      const translated = await translateComprehensiveData(sourceData, targetLangs, larkConfig.sourceLang);
       translationsMap = { ...translationsMap, ...translated };
-      console.log('  ✅ 翻译完成');
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
