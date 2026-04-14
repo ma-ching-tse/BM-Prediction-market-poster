@@ -107,18 +107,15 @@
       "cards": [
         {
           "text": "特朗普会在2027年之前卸任总统吗？",
-          "image": "",
-          "valueLabel": "是"
+          "image": "assets/card-icons/btc.png"
         },
         {
           "text": "特朗普会在2027年之前卸任总统吗？",
-          "image": "",
-          "valueLabel": "是"
+          "image": "assets/card-icons/soccer.png"
         },
         {
           "text": "特朗普会在2027年之前卸任总统吗？",
-          "image": "",
-          "valueLabel": "是"
+          "image": "assets/card-icons/trump.png"
         }
       ],
       "brandLogo": "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19"
@@ -128,7 +125,6 @@
       "subtitle": "全球玩家都在预测什么？",
       "footer": "查看产品：交易-预测市场",
       "outcomeLabel": "是",
-      "titleFontSize": 110,
       "titleLineHeight": 1.2,
       "titleMaxWidth": 824,
       "subtitleFontSize": 46,
@@ -158,7 +154,6 @@
       "subtitle": "全球玩家都在預測什麼？",
       "footer": "查看產品：交易-預測市場",
       "outcomeLabel": "是",
-      "titleFontSize": 106,
       "titleLineHeight": 1.2,
       "titleMaxWidth": 824,
       "subtitleFontSize": 46,
@@ -188,7 +183,6 @@
       "subtitle": "What are global traders predicting?",
       "footer": "View Product: Trade - Prediction Market",
       "outcomeLabel": "Yes",
-      "titleFontSize": 96,
       "titleLineHeight": 1.14,
       "titleMaxWidth": 860,
       "subtitleFontSize": 40,
@@ -218,7 +212,6 @@
       "subtitle": "世界中のユーザーはいま何を予測している？",
       "footer": "製品を見る：取引 - 予測市場",
       "outcomeLabel": "はい",
-      "titleFontSize": 90,
       "titleLineHeight": 1.16,
       "titleMaxWidth": 860,
       "subtitleFontSize": 38,
@@ -248,7 +241,6 @@
       "subtitle": "Người chơi toàn cầu đang dự đoán điều gì?",
       "footer": "Xem sản phẩm: Giao dịch - Thị trường dự đoán",
       "outcomeLabel": "Có",
-      "titleFontSize": 80,
       "titleLineHeight": 1.12,
       "titleMaxWidth": 860,
       "subtitleFontSize": 34,
@@ -278,7 +270,6 @@
       "subtitle": "Que prédisent les traders du monde entier ?",
       "footer": "Voir le produit : Trading - Marché prédictif",
       "outcomeLabel": "Oui",
-      "titleFontSize": 80,
       "titleLineHeight": 1.12,
       "titleMaxWidth": 860,
       "subtitleFontSize": 34,
@@ -308,7 +299,6 @@
       "subtitle": "¿Qué están prediciendo los traders globales?",
       "footer": "Ver producto: Trading - Mercado de predicción",
       "outcomeLabel": "Sí",
-      "titleFontSize": 82,
       "titleLineHeight": 1.12,
       "titleMaxWidth": 860,
       "subtitleFontSize": 35,
@@ -338,7 +328,6 @@
       "subtitle": "O que os traders globais estão prevendo?",
       "footer": "Ver produto: Trading - Mercado de previsão",
       "outcomeLabel": "Sim",
-      "titleFontSize": 82,
       "titleLineHeight": 1.12,
       "titleMaxWidth": 860,
       "subtitleFontSize": 35,
@@ -368,7 +357,6 @@
       "subtitle": "Was prognostizieren Trader weltweit?",
       "footer": "Produkt ansehen: Trading - Prognosemarkt",
       "outcomeLabel": "Ja",
-      "titleFontSize": 86,
       "titleLineHeight": 1.12,
       "titleMaxWidth": 860,
       "subtitleFontSize": 36,

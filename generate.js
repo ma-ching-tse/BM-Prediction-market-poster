@@ -1164,7 +1164,7 @@ async function fetchComprehensiveEventsFromLark(config, accessToken) {
   }
 
   const spreadsheetToken = config.spreadsheetToken;
-  const range = encodeURIComponent(`${sheetId}!A1:I2`);
+  const range = encodeURIComponent(`${sheetId}!A1:J2`);
   const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
 
   const res = await fetch(url, {
@@ -1247,6 +1247,45 @@ async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'z
   return result;
 }
 
+// ── 综合事件：翻译结果回填到 Lark 表格（第 3 行起，每行一种语言）──
+async function writeBackTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId) {
+  const langs = Object.keys(translationsMap);
+  const rows = langs.map(lang => {
+    const d = translationsMap[lang];
+    return [
+      lang,
+      String(d.mainTitle ?? ''),
+      String(d.subTitle ?? ''),
+      String(d.footer ?? ''),
+      String(d.cards?.[0]?.text ?? ''),
+      sourceData.cards[0].percent,
+      String(d.cards?.[1]?.text ?? ''),
+      sourceData.cards[1].percent,
+      String(d.cards?.[2]?.text ?? ''),
+      sourceData.cards[2].percent
+    ];
+  });
+
+  const startRow = 3;
+  const endRow = startRow + rows.length - 1;
+  const range = `${sheetId}!A${startRow}:J${endRow}`;
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ valueRange: { range, values: rows } })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+  return rows.length;
+}
+
 // ── 综合事件：构建海报 payload ──────────────────────────────
 function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig) {
   const templateCopy = copyConfig?.comprehensive ?? {};
@@ -1275,9 +1314,9 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
       subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3),
       cardTextFontSize: Number(mergedCopy.cardTextFontSize ?? 40),
       cardTextLineHeight: Number(mergedCopy.cardTextLineHeight ?? 1.2),
-      cards: (translated.cards ?? sourceData.cards).map(card => ({
+      cards: (translated.cards ?? sourceData.cards).map((card, i) => ({
         text: String(card.text ?? '').trim(),
-        image: '',
+        image: String(defaultCopy.cards?.[i]?.image ?? '').trim(),
         valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
       }))
     }
@@ -1379,6 +1418,13 @@ async function main() {
       console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
       const translated = await translateComprehensiveData(sourceData, targetLangs, larkConfig.sourceLang);
       translationsMap = { ...translationsMap, ...translated };
+
+      console.log('\n回填翻译结果到 Lark 表格...');
+      const writtenCount = await writeBackTranslationsToLark(
+        sourceData, translationsMap,
+        accessToken, larkConfig.spreadsheetToken, larkConfig.comprehensiveSheetId
+      );
+      console.log(`  ✅ 已回填 ${writtenCount} 种语言（第 3 行起，A 列为语言代码）`);
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');

@@ -107,17 +107,6 @@
       overflow: hidden;
     }
 
-    .card::after {
-      content: "";
-      position: absolute;
-      right: 206px;
-      top: 0;
-      width: 260px;
-      height: 100%;
-      background: radial-gradient(circle at 30% 50%, rgba(45, 53, 70, 0.45) 0%, rgba(22, 22, 22, 0) 72%);
-      pointer-events: none;
-    }
-
     .card-image-wrap {
       width: 185px;
       height: 189px;
@@ -187,7 +176,7 @@
     .gauge-center {
       position: absolute;
       left: 0;
-      right: 0;
+      right: 20px;
       top: 59px;
       text-align: center;
       font-style: normal;
@@ -390,9 +379,9 @@
       };
     }
 
-    function renderGauge(percent, label) {
+    function renderGauge(percent) {
       const clamped = toRate(percent);
-      const gaugeLabel = String(label || copy.outcomeLabel || 'Yes').trim() || 'Yes';
+      const gaugeLabel = 'Yes';
       return `
         <div class="gauge">
           <svg class="gauge-svg" viewBox="0 0 254 136" aria-hidden="true">
@@ -427,50 +416,59 @@
               ${image ? `<img src="${image}" alt="" />` : ''}
             </div>
             <div class="card-copy">${text}</div>
-            ${renderGauge(game?.homeTeam?.winRate, cardCopy.valueLabel)}
+            ${renderGauge(game?.homeTeam?.winRate)}
           </div>
         `;
       }).join('');
     }
 
-    // 大标题自适应：若超出两行则缩小字号，确保两行内完整显示
+    // 大标题自适应：
+    //   一行放得下 → 110px
+    //   需要换行   → 固定 86px（两行内放不下再二分缩至最小 70px）
     function fitTitle() {
       const poster = document.getElementById('poster');
       const titleEl = document.getElementById('title');
       const baseFontSize = Number(copy.titleFontSize || 110);
+      const twoLineFontSize = 86;
+      const minFontSize = 70;
       const lineHeight = Number(copy.titleLineHeight || 1.2);
-      const maxLines = 2;
 
-      const maxH = (fs) => Math.ceil(fs * lineHeight * maxLines) + 4;
+      const maxH = (fs) => Math.ceil(fs * lineHeight * 2) + 4;
 
-      let lo = Math.max(36, Math.round(baseFontSize * 0.5));
-      let hi = baseFontSize;
-      let chosen = baseFontSize;
+      function measure(fs) {
+        poster.style.setProperty('--title-size', `${fs}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        return titleEl.scrollHeight;
+      }
 
-      // 先检查原字号是否已经够用，够的话直接跳过搜索
-      poster.style.setProperty('--title-size', `${hi}px`);
-      titleEl.style.maxHeight = 'none';
-      void titleEl.offsetHeight; // 触发 reflow
-      if (titleEl.scrollHeight <= maxH(hi)) {
-        titleEl.style.maxHeight = `${maxH(hi)}px`;
+      // 1. 先试原始字号，一行能放下就直接用
+      const oneLineH = Math.ceil(baseFontSize * lineHeight) + 4;
+      if (measure(baseFontSize) <= oneLineH) {
+        titleEl.style.maxHeight = `${maxH(baseFontSize)}px`;
         return;
       }
 
-      // 二分查找：找到能放入两行的最大字号
+      // 2. 换行情况：先用 86px 试两行
+      if (measure(twoLineFontSize) <= maxH(twoLineFontSize)) {
+        titleEl.style.maxHeight = `${maxH(twoLineFontSize)}px`;
+        return;
+      }
+
+      // 3. 86px 还放不下：二分查找 [minFontSize, 86)
+      let lo = minFontSize;
+      let hi = twoLineFontSize - 1;
+      let chosen = minFontSize;
       while (lo <= hi) {
         const mid = Math.round((lo + hi) / 2);
-        poster.style.setProperty('--title-size', `${mid}px`);
-        titleEl.style.maxHeight = 'none';
-        void titleEl.offsetHeight;
-        if (titleEl.scrollHeight <= maxH(mid)) {
+        if (measure(mid) <= maxH(mid)) {
           chosen = mid;
           lo = mid + 1;
         } else {
           hi = mid - 1;
         }
       }
-
-      poster.style.setProperty('--title-size', `${chosen}px`);
+      measure(chosen);
       titleEl.style.maxHeight = `${maxH(chosen)}px`;
     }
 

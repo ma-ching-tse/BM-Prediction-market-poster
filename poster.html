@@ -44,19 +44,6 @@
       font-family: "MiSans VF", "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     }
 
-    .copy-eraser {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 930px;
-      height: 320px;
-      z-index: 1;
-      pointer-events: none;
-      background:
-        radial-gradient(circle at 18% 12%, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0.2) 28%, rgba(0, 0, 0, 0) 54%),
-        linear-gradient(180deg, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.88) 28%, rgba(0, 0, 0, 0.56) 70%, rgba(0, 0, 0, 0) 100%);
-    }
-
     .poster-title {
       max-width: var(--poster-title-width, 860px);
       font-size: var(--poster-title-size, 86px);
@@ -245,7 +232,6 @@
 <body>
   <div id="poster">
     <img class="bg-image" id="bg-image" src="assets/background.png" alt="" />
-    <div class="copy-eraser"></div>
     <div class="poster-copy" id="poster-copy">
       <div class="poster-title" id="poster-title">NBA热门比赛</div>
       <div class="poster-subtitle" id="poster-subtitle">预测比赛，赢取奖励</div>
