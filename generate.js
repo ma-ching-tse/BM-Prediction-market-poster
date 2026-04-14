@@ -159,7 +159,10 @@ function loadLarkConfig() {
     wikiToken: String(config.wikiToken ?? '').trim(),
     wikiUrl: String(config.wikiUrl ?? '').trim(),
     sheetId: String(config.sheetId ?? '').trim(),
-    range: String(config.range ?? 'A1:E500').trim()
+    range: String(config.range ?? 'A1:E500').trim(),
+    comprehensiveSheetId: String(config.comprehensiveSheetId ?? '').trim(),
+    sourceLang: String(config.sourceLang ?? 'zh-CN').trim(),
+    anthropicApiKey: String(config.anthropicApiKey ?? '').trim()
   };
 }
 
@@ -1151,6 +1154,161 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap) {
   return { rows: nextRows, enrichedCount, autoMatchedCount };
 }
 
+// ── 综合事件：从 Lark 读取 ──────────────────────────────────
+async function fetchComprehensiveEventsFromLark(config, accessToken) {
+  const sheetId = String(config.comprehensiveSheetId ?? '').trim();
+  if (!sheetId) {
+    throw new Error('lark.config.json 缺少 comprehensiveSheetId');
+  }
+
+  const spreadsheetToken = config.spreadsheetToken;
+  const range = encodeURIComponent(`${sheetId}!A1:I2`);
+  const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark 综合事件表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('综合事件表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
+  const row = values[1].map(cell => String(cell ?? '').trim());
+
+  function col(name) {
+    const idx = headers.indexOf(name);
+    return idx !== -1 ? row[idx] : '';
+  }
+
+  return {
+    mainTitle: col('main title'),
+    subTitle: col('sub title'),
+    footer: col('footer'),
+    cards: [
+      { text: col('1'), percent: Number(col('percent_1')) || 50 },
+      { text: col('2'), percent: Number(col('percent_2')) || 50 },
+      { text: col('3'), percent: Number(col('percent_3')) || 50 }
+    ]
+  };
+}
+
+// ── 综合事件：调用 Claude API 翻译 ──────────────────────────
+async function translateComprehensiveData(sourceData, targetLangs, apiKey) {
+  const langLabels = {
+    'zh-TW': '繁體中文（台灣）',
+    'en': 'English',
+    'ja': '日本語',
+    'es': 'Español',
+    'pt': 'Português',
+    'de': 'Deutsch',
+    'fr': 'Français',
+    'vi': 'Tiếng Việt'
+  };
+
+  const targets = targetLangs.map(l => `${l}（${langLabels[l] || l}）`).join('、');
+
+  const prompt = `你是一名专业的本地化翻译员，专注于加密货币交易平台的营销文案翻译。
+
+请将以下简体中文内容翻译成：${targets}
+
+原始内容：
+${JSON.stringify(sourceData, null, 2)}
+
+翻译要求：
+- mainTitle：海报主标题，语气要吸引人，简洁有力
+- subTitle：副标题，自然流畅
+- footer：产品引导文案，简短清晰
+- cards[].text：预测市场问题，保持问句形式
+- cards[].percent：直接复制原值，不翻译
+- 不修改 JSON 结构和字段名
+- 直接输出 JSON，不要加任何解释
+
+输出格式（只输出这个 JSON 对象）：
+{
+  "zh-TW": { "mainTitle": "...", "subTitle": "...", "footer": "...", "cards": [{"text": "...", "percent": 72}, ...] },
+  "en": { ... }
+}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Claude 翻译 API 失败：HTTP ${res.status}，${text.slice(0, 200)}`);
+  }
+
+  const result = await res.json();
+  const raw = result.content?.[0]?.text ?? '';
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('Claude 翻译返回格式异常：未找到 JSON 块');
+  }
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    throw new Error(`Claude 翻译返回的 JSON 解析失败：${e.message}\n内容片段：${raw.slice(0, 300)}`);
+  }
+}
+
+// ── 综合事件：构建海报 payload ──────────────────────────────
+function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig) {
+  const templateCopy = copyConfig?.comprehensive ?? {};
+  const defaultCopy = templateCopy?.default ?? {};
+  const langCopy = templateCopy?.[lang] ?? {};
+  const mergedCopy = { ...defaultCopy, ...langCopy };
+
+  // Use translation for this lang; fall back to source (zh-CN) data
+  const translated = translationsMap[lang] ?? sourceData;
+
+  return {
+    games: sourceData.cards.map(card => ({
+      date: '',
+      homeTeam: { name: '', logo: '', winRate: card.percent },
+      awayTeam: { name: '', logo: '', winRate: 100 - card.percent }
+    })),
+    copy: {
+      title: String(translated.mainTitle ?? '').trim(),
+      subtitle: String(translated.subTitle ?? '').trim(),
+      footer: String(translated.footer ?? '').trim(),
+      outcomeLabel: String(mergedCopy.outcomeLabel ?? 'Yes'),
+      titleFontSize: Number(mergedCopy.titleFontSize ?? 110),
+      titleLineHeight: Number(mergedCopy.titleLineHeight ?? 1.2),
+      titleMaxWidth: Number(mergedCopy.titleMaxWidth ?? 824),
+      subtitleFontSize: Number(mergedCopy.subtitleFontSize ?? 46),
+      subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3),
+      cardTextFontSize: Number(mergedCopy.cardTextFontSize ?? 40),
+      cardTextLineHeight: Number(mergedCopy.cardTextLineHeight ?? 1.2),
+      cards: (translated.cards ?? sourceData.cards).map(card => ({
+        text: String(card.text ?? '').trim(),
+        image: '',
+        valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
+      }))
+    }
+  };
+}
+
 // ── 生成单张海报 ──────────────────────────────────────────
 async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath) {
   const injection = `<script>window.GAMES_DATA = ${JSON.stringify(posterPayload)}; window.BG_PATH = "file://${bgPath}";</script>`;
@@ -1184,12 +1342,100 @@ async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputP
   console.log(`  ✅ ${path.basename(jpgPath)} (${sizeKB}KB, quality=${quality})`);
 }
 
+// ── 公共：扫描背景图、创建输出目录、启动浏览器 ──────────────
+function scanBgFiles() {
+  const bgFiles = fs.readdirSync(BG_DIR).filter(f => f.endsWith('.png') || f.endsWith('.jpg'));
+  if (bgFiles.length === 0) {
+    console.error('❌ backgrounds/ 目录下没有找到背景图，请先添加语种背景图（如 zh-CN.png）');
+    process.exit(1);
+  }
+  return bgFiles;
+}
+
+function prepareOutputDir(date) {
+  const dateDir = path.join(OUTPUT_DIR, date);
+  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+  if (!fs.existsSync(dateDir)) fs.mkdirSync(dateDir);
+  return dateDir;
+}
+
+async function launchBrowser() {
+  return puppeteer.launch({
+    headless: 'new',
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files']
+  });
+}
+
+function buildZip(dateDir, outputPrefixWithDate, bgFiles) {
+  const zipName = `${outputPrefixWithDate}.zip`;
+  const zipPath = path.join(dateDir, zipName);
+  if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+  const files = bgFiles.map(f => `${outputPrefixWithDate}_${path.parse(f).name}.jpg`).join(' ');
+  execSync(`cd "${dateDir}" && zip "${zipName}" ${files}`);
+  const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
+  console.log(`\n📦 ${zipName} (${zipKB}KB)`);
+  console.log(`所有图片已保存到：${dateDir}\n`);
+}
+
 // ── 主流程 ────────────────────────────────────────────────
 async function main() {
   const { templateKey, templateConfig } = parseCliOptions();
   const copyConfig = loadPosterCopyConfig();
   console.log(`\n当前模板：${templateKey} (${path.basename(templateConfig.file)})`);
 
+  // ── 综合事件流程 ──────────────────────────────────────────
+  if (templateKey === 'comprehensive') {
+    console.log('\n从 Lark 综合事件表格拉取数据...');
+    const larkConfig = loadLarkConfig();
+    const accessToken = await getLarkTenantAccessToken(larkConfig);
+    const sourceData = await fetchComprehensiveEventsFromLark(larkConfig, accessToken);
+    console.log('  ✅ 已读取综合事件数据');
+
+    const bgFiles = scanBgFiles();
+    const sourceLang = larkConfig.sourceLang;
+    const targetLangs = bgFiles.map(f => path.parse(f).name).filter(l => l !== sourceLang);
+
+    let translationsMap = { [sourceLang]: sourceData };
+
+    if (targetLangs.length > 0) {
+      const apiKey = larkConfig.anthropicApiKey || String(process.env.ANTHROPIC_API_KEY ?? '').trim();
+      if (!apiKey) {
+        throw new Error(
+          '需要 Anthropic API Key 进行多语言翻译，' +
+          '请在 lark.config.json 的 anthropicApiKey 字段或环境变量 ANTHROPIC_API_KEY 中配置'
+        );
+      }
+      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
+      const translated = await translateComprehensiveData(sourceData, targetLangs, apiKey);
+      translationsMap = { ...translationsMap, ...translated };
+      console.log('  ✅ 翻译完成');
+    }
+
+    const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const dateDir = prepareOutputDir(date);
+    const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
+
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
+
+    console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
+    for (const bgFile of bgFiles) {
+      const lang = path.parse(bgFile).name;
+      const bgPath = path.join(BG_DIR, bgFile);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const posterPayload = buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+    }
+
+    await browser.close();
+    buildZip(dateDir, outputPrefixWithDate, bgFiles);
+    return;
+  }
+
+  // ── Classic NBA 流程 ──────────────────────────────────────
   console.log('\n从 Lark 普通电子表格拉取比赛数据...');
   const sheetData = await fetchGamesFromLarkSheets();
   let gamesRows = sheetData.rows;
@@ -1213,52 +1459,26 @@ async function main() {
   validateWinRates(gamesRows);
   const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
 
-  // 扫描 backgrounds/ 目录，每个 PNG 对应一个语种
-  const bgFiles = fs.readdirSync(BG_DIR).filter(f => f.endsWith('.png') || f.endsWith('.jpg'));
-  if (bgFiles.length === 0) {
-    console.error('❌ backgrounds/ 目录下没有找到背景图，请先添加语种背景图（如 zh-CN.png）');
-    process.exit(1);
-  }
-
+  const bgFiles = scanBgFiles();
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const dateDir = path.join(OUTPUT_DIR, date);
+  const dateDir = prepareOutputDir(date);
+  const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
 
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
-  if (!fs.existsSync(dateDir)) fs.mkdirSync(dateDir);
-
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files']
-  });
-
+  const browser = await launchBrowser();
   const page = await browser.newPage();
   await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
   console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
-
-  const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
-
   for (const bgFile of bgFiles) {
-    const lang = path.parse(bgFile).name;           // e.g. "zh-CN"
+    const lang = path.parse(bgFile).name;
     const bgPath = path.join(BG_DIR, bgFile);
     const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
-
     const posterPayload = buildPosterPayload(gamesRows, teamsMap, lang, templateKey, copyConfig);
     await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
   }
 
   await browser.close();
-
-  // ── 打包成 ZIP ────────────────────────────────────────────
-  const zipName = `${outputPrefixWithDate}.zip`;
-  const zipPath = path.join(dateDir, zipName);
-  if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-  const files = bgFiles.map(f => `${outputPrefixWithDate}_${path.parse(f).name}.jpg`).join(' ');
-  execSync(`cd "${dateDir}" && zip "${zipName}" ${files}`);
-  const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
-  console.log(`\n📦 ${zipName} (${zipKB}KB)`);
-  console.log(`所有图片已保存到：${dateDir}\n`);
+  buildZip(dateDir, outputPrefixWithDate, bgFiles);
 }
 
 main().catch(err => {
