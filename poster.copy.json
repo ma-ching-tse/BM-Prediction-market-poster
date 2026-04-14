@@ -1,0 +1,397 @@
+{
+  "classic": {
+    "zh-CN": {
+      "title": "NBA热门比赛",
+      "subtitle": "预测比赛，赢取奖励",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "zh-TW": {
+      "title": "NBA熱門賽事",
+      "subtitle": "預測比賽，贏取獎勵",
+      "titleFontSize": 100,
+      "titleLineHeight": 1.18,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "ja": {
+      "title": "注目のNBA試合",
+      "subtitle": "試合を予測して、報酬を獲得しよう",
+      "titleFontSize": 94,
+      "titleLineHeight": 1.18,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "es": {
+      "title": "Partidos Clave de la NBA",
+      "subtitle": "Predice los partidos y gana premios",
+      "titleFontSize": 72,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "pt": {
+      "title": "Jogos em Destaque da NBA",
+      "subtitle": "Preveja os jogos e ganhe recompensas",
+      "titleFontSize": 72,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "de": {
+      "title": "Beliebte NBA Spiele",
+      "subtitle": "Sag die Spiele voraus und gewinne Belohnungen",
+      "titleFontSize": 72,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "fr": {
+      "title": "Matchs NBA Tendance",
+      "subtitle": "Prédisez les matchs et gagnez des récompenses",
+      "titleFontSize": 72,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "vi": {
+      "title": "Các trận đấu NBA Hot",
+      "subtitle": "Dự đoán kết quả, nhận thưởng hấp dẫn",
+      "titleFontSize": 74,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "en": {
+      "title": "Trending NBA Games",
+      "subtitle": "Predict & Win Rewards",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.15,
+      "titleMaxWidth": 856,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    },
+    "default": {
+      "title": "Trending NBA Games",
+      "subtitle": "Predict & Win Rewards",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.15,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3
+    }
+  },
+  "comprehensive": {
+    "default": {
+      "title": "每周热门趋势",
+      "subtitle": "全球玩家都在预测什么？",
+      "footer": "查看产品：交易-预测市场",
+      "outcomeLabel": "是",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "cardTextFontSize": 40,
+      "cardTextLineHeight": 1.2,
+      "cards": [
+        {
+          "text": "特朗普会在2027年之前卸任总统吗？",
+          "image": "",
+          "valueLabel": "是"
+        },
+        {
+          "text": "特朗普会在2027年之前卸任总统吗？",
+          "image": "",
+          "valueLabel": "是"
+        },
+        {
+          "text": "特朗普会在2027年之前卸任总统吗？",
+          "image": "",
+          "valueLabel": "是"
+        }
+      ],
+      "brandLogo": "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19"
+    },
+    "zh-CN": {
+      "title": "每周热门趋势",
+      "subtitle": "全球玩家都在预测什么？",
+      "footer": "查看产品：交易-预测市场",
+      "outcomeLabel": "是",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "cardTextFontSize": 40,
+      "cardTextLineHeight": 1.2,
+      "cards": [
+        {
+          "text": "特朗普会在2027年之前卸任总统吗？",
+          "image": "",
+          "valueLabel": "是"
+        },
+        {
+          "text": "特朗普会在2027年之前卸任总统吗？",
+          "image": "",
+          "valueLabel": "是"
+        },
+        {
+          "text": "特朗普会在2027年之前卸任总统吗？",
+          "image": "",
+          "valueLabel": "是"
+        }
+      ]
+    },
+    "zh-TW": {
+      "title": "每週熱門趨勢",
+      "subtitle": "全球玩家都在預測什麼？",
+      "footer": "查看產品：交易-預測市場",
+      "outcomeLabel": "是",
+      "titleFontSize": 106,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "cardTextFontSize": 40,
+      "cardTextLineHeight": 1.2,
+      "cards": [
+        {
+          "text": "川普會在2027年之前卸任總統嗎？",
+          "image": "",
+          "valueLabel": "是"
+        },
+        {
+          "text": "川普會在2027年之前卸任總統嗎？",
+          "image": "",
+          "valueLabel": "是"
+        },
+        {
+          "text": "川普會在2027年之前卸任總統嗎？",
+          "image": "",
+          "valueLabel": "是"
+        }
+      ]
+    },
+    "en": {
+      "title": "Weekly Hot Trends",
+      "subtitle": "What are global traders predicting?",
+      "footer": "View Product: Trade - Prediction Market",
+      "outcomeLabel": "Yes",
+      "titleFontSize": 96,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 40,
+      "subtitleLineHeight": 1.25,
+      "cardTextFontSize": 34,
+      "cardTextLineHeight": 1.2,
+      "cards": [
+        {
+          "text": "Will Trump leave office before 2027?",
+          "image": "",
+          "valueLabel": "Yes"
+        },
+        {
+          "text": "Will Trump leave office before 2027?",
+          "image": "",
+          "valueLabel": "Yes"
+        },
+        {
+          "text": "Will Trump leave office before 2027?",
+          "image": "",
+          "valueLabel": "Yes"
+        }
+      ]
+    },
+    "ja": {
+      "title": "今週の注目トレンド",
+      "subtitle": "世界中のユーザーはいま何を予測している？",
+      "footer": "製品を見る：取引 - 予測市場",
+      "outcomeLabel": "はい",
+      "titleFontSize": 90,
+      "titleLineHeight": 1.16,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.25,
+      "cardTextFontSize": 32,
+      "cardTextLineHeight": 1.24,
+      "cards": [
+        {
+          "text": "トランプ氏は2027年までに大統領を退任する？",
+          "image": "",
+          "valueLabel": "はい"
+        },
+        {
+          "text": "トランプ氏は2027年までに大統領を退任する？",
+          "image": "",
+          "valueLabel": "はい"
+        },
+        {
+          "text": "トランプ氏は2027年までに大統領を退任する？",
+          "image": "",
+          "valueLabel": "はい"
+        }
+      ]
+    },
+    "vi": {
+      "title": "Xu hướng nổi bật tuần này",
+      "subtitle": "Người chơi toàn cầu đang dự đoán điều gì?",
+      "footer": "Xem sản phẩm: Giao dịch - Thị trường dự đoán",
+      "outcomeLabel": "Có",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 34,
+      "subtitleLineHeight": 1.24,
+      "cardTextFontSize": 30,
+      "cardTextLineHeight": 1.24,
+      "cards": [
+        {
+          "text": "Liệu Trump có rời nhiệm sở trước năm 2027?",
+          "image": "",
+          "valueLabel": "Có"
+        },
+        {
+          "text": "Liệu Trump có rời nhiệm sở trước năm 2027?",
+          "image": "",
+          "valueLabel": "Có"
+        },
+        {
+          "text": "Liệu Trump có rời nhiệm sở trước năm 2027?",
+          "image": "",
+          "valueLabel": "Có"
+        }
+      ]
+    },
+    "fr": {
+      "title": "Tendances de la semaine",
+      "subtitle": "Que prédisent les traders du monde entier ?",
+      "footer": "Voir le produit : Trading - Marché prédictif",
+      "outcomeLabel": "Oui",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 34,
+      "subtitleLineHeight": 1.24,
+      "cardTextFontSize": 30,
+      "cardTextLineHeight": 1.24,
+      "cards": [
+        {
+          "text": "Trump quittera-t-il ses fonctions avant 2027 ?",
+          "image": "",
+          "valueLabel": "Oui"
+        },
+        {
+          "text": "Trump quittera-t-il ses fonctions avant 2027 ?",
+          "image": "",
+          "valueLabel": "Oui"
+        },
+        {
+          "text": "Trump quittera-t-il ses fonctions avant 2027 ?",
+          "image": "",
+          "valueLabel": "Oui"
+        }
+      ]
+    },
+    "es": {
+      "title": "Tendencias de la semana",
+      "subtitle": "¿Qué están prediciendo los traders globales?",
+      "footer": "Ver producto: Trading - Mercado de predicción",
+      "outcomeLabel": "Sí",
+      "titleFontSize": 82,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 35,
+      "subtitleLineHeight": 1.24,
+      "cardTextFontSize": 31,
+      "cardTextLineHeight": 1.24,
+      "cards": [
+        {
+          "text": "¿Trump dejará el cargo antes de 2027?",
+          "image": "",
+          "valueLabel": "Sí"
+        },
+        {
+          "text": "¿Trump dejará el cargo antes de 2027?",
+          "image": "",
+          "valueLabel": "Sí"
+        },
+        {
+          "text": "¿Trump dejará el cargo antes de 2027?",
+          "image": "",
+          "valueLabel": "Sí"
+        }
+      ]
+    },
+    "pt": {
+      "title": "Tendências da semana",
+      "subtitle": "O que os traders globais estão prevendo?",
+      "footer": "Ver produto: Trading - Mercado de previsão",
+      "outcomeLabel": "Sim",
+      "titleFontSize": 82,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 35,
+      "subtitleLineHeight": 1.24,
+      "cardTextFontSize": 31,
+      "cardTextLineHeight": 1.24,
+      "cards": [
+        {
+          "text": "Trump deixará o cargo antes de 2027?",
+          "image": "",
+          "valueLabel": "Sim"
+        },
+        {
+          "text": "Trump deixará o cargo antes de 2027?",
+          "image": "",
+          "valueLabel": "Sim"
+        },
+        {
+          "text": "Trump deixará o cargo antes de 2027?",
+          "image": "",
+          "valueLabel": "Sim"
+        }
+      ]
+    },
+    "de": {
+      "title": "Wochentrends",
+      "subtitle": "Was prognostizieren Trader weltweit?",
+      "footer": "Produkt ansehen: Trading - Prognosemarkt",
+      "outcomeLabel": "Ja",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.12,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 36,
+      "subtitleLineHeight": 1.24,
+      "cardTextFontSize": 32,
+      "cardTextLineHeight": 1.24,
+      "cards": [
+        {
+          "text": "Wird Trump vor 2027 aus dem Amt scheiden?",
+          "image": "",
+          "valueLabel": "Ja"
+        },
+        {
+          "text": "Wird Trump vor 2027 aus dem Amt scheiden?",
+          "image": "",
+          "valueLabel": "Ja"
+        },
+        {
+          "text": "Wird Trump vor 2027 aus dem Amt scheiden?",
+          "image": "",
+          "valueLabel": "Ja"
+        }
+      ]
+    }
+  }
+}

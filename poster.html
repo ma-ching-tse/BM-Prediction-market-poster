@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>NBA 热门比赛海报</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #poster {
+      position: relative;
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+      font-family: 'PingFang SC', 'Noto Sans SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    }
+
+    /* ── 背景图（保留顶部视觉、BitMart Logo、底部栏） ── */
+    .bg-image {
+      position: absolute;
+      left: -1px;
+      top: -1px;
+      width: 1201px;
+      height: 1200px;
+      object-fit: cover;
+    }
+
+    .poster-copy {
+      position: absolute;
+      left: 65px;
+      top: 54px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      color: #fff;
+      z-index: 2;
+      font-family: "MiSans VF", "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    .copy-eraser {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 930px;
+      height: 320px;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0.2) 28%, rgba(0, 0, 0, 0) 54%),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.88) 28%, rgba(0, 0, 0, 0.56) 70%, rgba(0, 0, 0, 0) 100%);
+    }
+
+    .poster-title {
+      max-width: var(--poster-title-width, 860px);
+      font-size: var(--poster-title-size, 86px);
+      line-height: var(--poster-title-line-height, 1.15);
+      font-weight: 800;
+      letter-spacing: 0;
+      text-wrap: balance;
+      text-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    }
+
+    .poster-subtitle {
+      max-width: 100%;
+      font-size: var(--poster-subtitle-size, 46px);
+      line-height: var(--poster-subtitle-line-height, 1.3);
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+    }
+
+    /* ── 比赛卡片容器 ── */
+    .games-container {
+      position: absolute;
+      left: 63px;
+      top: 359px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── 单张比赛卡片 ── */
+    .game-card {
+      width: 100%;
+      height: 239px;
+      border: 1px solid #5d5d5d;
+      border-radius: 20px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-shrink: 0;
+      /* 右上角青色辐射渐变背景 */
+      background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 1072 239' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect x='0' y='0' height='100%' width='100%' fill='url(%23grad)' opacity='0.20000000298023224'/><defs><radialGradient id='grad' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='10' gradientTransform='matrix(-48.351 14.259 -5.7828 -22.126 857.28 46.17)'><stop stop-color='rgba(1,224,224,0.2)' offset='0'/><stop stop-color='rgba(1,224,224,0)' offset='1'/></radialGradient></defs></svg>");
+    }
+
+    /* ── Logo 占位区域 ── */
+    .logo-slot {
+      flex-shrink: 0;
+      width: 185px;
+      height: 189px;
+      border-radius: 20px;
+      background: transparent;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-slot img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    /* ── 中间信息区 ── */
+    .game-info {
+      flex: 1;
+      width: 614px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .game-meta {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .game-date {
+      font-size: 24px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 40px;
+    }
+
+    .game-matchup {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .team-name {
+      flex: 1;
+      font-size: 30px;
+      font-weight: 400;
+      color: #fff;
+      line-height: 1.25;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+    .team-name.home { text-align: right; }
+    .team-name.away { text-align: left; }
+
+    .vs-wrap {
+      flex-shrink: 0;
+      width: 128px;
+      height: 67px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* VS 图片只截取中间部分（原图比较宽） */
+    .vs-wrap img {
+      position: absolute;
+      height: 100%;
+      width: 268.6%;
+      left: -88.2%;
+      top: 0;
+      object-fit: cover;
+    }
+
+    /* ── 胜率进度条 ── */
+    .win-rate-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .progress-track {
+      height: 36px;
+      border-radius: 61px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 0 15.8px 0 rgba(243, 243, 243, 0.1);
+    }
+
+    /* 灰色底轨 */
+    .progress-track img.track-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 61px;
+    }
+
+    /* 青色填充 */
+    .progress-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      border-radius: 79px;
+      background: #01e0e0;
+      box-shadow:
+        inset 0px 0px 6.1px rgba(75, 25, 208, 0.26),
+        inset 0px -9px 23.2px rgba(255, 255, 255, 0.25),
+        inset 0px -4px 38.4px rgba(255, 255, 255, 0.4),
+        inset 0px 4px 11.9px rgba(0, 0, 0, 0.25);
+      /* width 由内联样式控制 */
+    }
+
+    /* 反光效果 */
+    .progress-fill::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 22px;
+      border-radius: 79px;
+      background: linear-gradient(180deg, rgba(243,243,243,0.4) 0%, rgba(243,243,243,0) 51%);
+    }
+
+    .win-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 24px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <img class="bg-image" id="bg-image" src="assets/background.png" alt="" />
+    <div class="copy-eraser"></div>
+    <div class="poster-copy" id="poster-copy">
+      <div class="poster-title" id="poster-title">NBA热门比赛</div>
+      <div class="poster-subtitle" id="poster-subtitle">预测比赛，赢取奖励</div>
+    </div>
+
+    <div class="games-container" id="games-container">
+      <!-- 由 JS 动态渲染 -->
+    </div>
+  </div>
+
+  <script>
+    // 预览用默认数据（generate.js 会注入 window.GAMES_DATA 覆盖它）
+    const PREVIEW_DATA = {
+      copy: {
+        title: "NBA热门比赛",
+        subtitle: "预测比赛，赢取奖励",
+        titleFontSize: 110,
+        titleLineHeight: 1.2,
+        titleMaxWidth: 860,
+        subtitleFontSize: 46,
+        subtitleLineHeight: 1.3
+      },
+      games: [
+        {
+          date: "2026-04-09",
+          homeTeam: { name: "凯尔特人", logo: "NBA_icon/波士顿凯尔特人.png", winRate: 58 },
+          awayTeam: { name: "尼克斯",   logo: "NBA_icon/纽约尼克斯.png",    winRate: 42 }
+        },
+        {
+          date: "2026-04-09",
+          homeTeam: { name: "湖人", logo: "NBA_icon/洛杉矶湖人.png", winRate: 45 },
+          awayTeam: { name: "勇士", logo: "NBA_icon/金州勇士.png",   winRate: 55 }
+        },
+        {
+          date: "2026-04-10",
+          homeTeam: { name: "热火", logo: "NBA_icon/迈阿密热火.png", winRate: 50 },
+          awayTeam: { name: "公牛", logo: "NBA_icon/芝加哥公牛.png", winRate: 50 }
+        }
+      ]
+    };
+
+    const data = window.GAMES_DATA || PREVIEW_DATA;
+
+    // 如果由 generate.js 注入了背景图路径，则替换
+    if (window.BG_PATH) {
+      document.getElementById('bg-image').src = window.BG_PATH;
+    }
+
+    function applyCopy(copy) {
+      const titleEl = document.getElementById('poster-title');
+      const subtitleEl = document.getElementById('poster-subtitle');
+      const root = document.getElementById('poster');
+      if (!copy || !titleEl || !subtitleEl || !root) return;
+
+      titleEl.textContent = copy.title || '';
+      subtitleEl.textContent = copy.subtitle || '';
+
+      root.style.setProperty('--poster-title-size', `${Number(copy.titleFontSize || 86)}px`);
+      root.style.setProperty('--poster-title-line-height', String(copy.titleLineHeight || 1.15));
+      root.style.setProperty('--poster-title-width', `${Number(copy.titleMaxWidth || 860)}px`);
+      root.style.setProperty('--poster-subtitle-size', `${Number(copy.subtitleFontSize || 46)}px`);
+      root.style.setProperty('--poster-subtitle-line-height', String(copy.subtitleLineHeight || 1.3));
+    }
+
+    function renderGames(games) {
+      const container = document.getElementById('games-container');
+      container.innerHTML = games.map(g => `
+        <div class="game-card">
+
+          <div class="logo-slot">
+            <img src="${g.homeTeam.logo}" alt="${g.homeTeam.name}" />
+          </div>
+
+          <div class="game-info">
+            <div class="game-meta">
+              <div class="game-date">${g.date}</div>
+              <div class="game-matchup">
+                <div class="team-name home">${g.homeTeam.name}</div>
+                <div class="vs-wrap">
+                  <img src="assets/vs_new.png" alt="VS" />
+                </div>
+                <div class="team-name away">${g.awayTeam.name}</div>
+              </div>
+            </div>
+
+            <div class="win-rate-section">
+              <div class="progress-track">
+                <img class="track-bg" src="assets/track_new.png" alt="" />
+                <div class="progress-fill" style="width: ${g.homeTeam.winRate}%"></div>
+              </div>
+              <div class="win-labels">
+                <span>${g.homeTeam.winRate}%</span>
+                <span>${g.awayTeam.winRate}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="logo-slot">
+            <img src="${g.awayTeam.logo}" alt="${g.awayTeam.name}" />
+          </div>
+
+        </div>
+      `).join('');
+    }
+
+    applyCopy(data.copy || PREVIEW_DATA.copy);
+    renderGames(data.games);
+  </script>
+</body>
+</html>

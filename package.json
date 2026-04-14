@@ -1,0 +1,14 @@
+{
+  "name": "nba-poster-generator",
+  "version": "1.0.0",
+  "description": "NBA 预测市场海报自动化生成工具",
+  "main": "generate.js",
+  "scripts": {
+    "generate": "node generate.js",
+    "generate:comprehensive": "node generate.js --template comprehensive"
+  },
+  "dependencies": {
+    "puppeteer": "^24.40.0",
+    "sharp": "^0.34.5"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "games": [
+    {
+      "date": "2026-04-09",
+      "homeTeam": {
+        "name": "凯尔特人",
+        "logo": "NBA_icon/波士顿凯尔特人.png",
+        "winRate": 58
+      },
+      "awayTeam": {
+        "name": "尼克斯",
+        "logo": "NBA_icon/纽约尼克斯.png",
+        "winRate": 42
+      }
+    },
+    {
+      "date": "2026-04-09",
+      "homeTeam": {
+        "name": "湖人",
+        "logo": "NBA_icon/洛杉矶湖人.png",
+        "winRate": 45
+      },
+      "awayTeam": {
+        "name": "勇士",
+        "logo": "NBA_icon/金州勇士.png",
+        "winRate": 55
+      }
+    },
+    {
+      "date": "2026-04-10",
+      "homeTeam": {
+        "name": "热火",
+        "logo": "NBA_icon/迈阿密热火.png",
+        "winRate": 50
+      },
+      "awayTeam": {
+        "name": "公牛",
+        "logo": "NBA_icon/芝加哥公牛.png",
+        "winRate": 50
+      }
+    }
+  ]
+}
