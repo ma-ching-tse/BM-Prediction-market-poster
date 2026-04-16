@@ -601,8 +601,112 @@ function findF1LogoPath(teamId, f1TeamsMap) {
   return fs.existsSync(logoPath) ? logoPath : null;
 }
 
+// ── F1：Polymarket 车队/车手匹配 ─────────────────────────
+function resolveF1TeamByOutcome(outcomeText, f1TeamsMap) {
+  const normalized = normalizeOutcomeToken(outcomeText);
+  if (!normalized) return null;
+  for (const [id, team] of Object.entries(f1TeamsMap)) {
+    const aliases = [id, team.en, team['zh-CN'], team['zh-TW'], team.ja, team.logo]
+      .map(v => normalizeOutcomeToken(v)).filter(Boolean);
+    if (aliases.some(a => a === normalized || normalized.includes(a) || a.includes(normalized))) return id;
+  }
+  return null;
+}
+
+// 从问题文本中提取主语（如 "Will Ferrari be..." → "Ferrari"）
+function extractTeamNameFromQuestion(question) {
+  const m = String(question ?? '').match(/^Will\s+(.+?)\s+be\s+/i);
+  return m ? m[1].trim() : null;
+}
+
+// 适用于多选市场（如分站赛冠军，outcomes = [Driver1, Driver2, ...]）
+function buildF1TeamsFromPolymarketMarket(market, f1TeamsMap) {
+  const slug = String(market?.slug ?? '').trim() || 'unknown';
+  const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(s => String(s).trim());
+  const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
+  if (outcomes.length !== prices.length) {
+    throw new Error(`Polymarket 市场（${slug}）outcomes 与 outcomePrices 数量不匹配`);
+  }
+  return outcomes.map((outcome, i) => {
+    const percent = toPercentProbability(prices[i]);
+    if (!Number.isFinite(percent)) return null;
+    const teamId = resolveF1TeamByOutcome(outcome, f1TeamsMap);
+    return {
+      teamId: teamId ?? `__raw__${outcome}`,
+      _rawName: outcome,
+      percent: Math.max(0, Math.min(100, Math.round(percent)))
+    };
+  }).filter(Boolean).sort((a, b) => b.percent - a.percent).slice(0, 3);
+}
+
+// 适用于多 Yes/No 子市场的 event（如总冠军，每个车队一个 Yes/No 市场）
+function buildF1TeamsFromPolymarketYesNoEvent(event, f1TeamsMap) {
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  const teamProbs = [];
+
+  for (const market of markets) {
+    const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', market?.slug ?? '')
+      .map(s => String(s).trim());
+    const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', market?.slug ?? '');
+    const yesIdx = outcomes.findIndex(o => o.toLowerCase() === 'yes');
+    if (yesIdx === -1) continue; // 不是 Yes/No 市场，跳过
+
+    const percent = toPercentProbability(prices[yesIdx]);
+    if (!Number.isFinite(percent)) continue;
+
+    // 从 question 提取车队名，如 "Will Ferrari be..." → "Ferrari"
+    const rawName = extractTeamNameFromQuestion(market.question)
+      ?? String(market.slug ?? '').replace(/^will-/, '').replace(/-be-.*$/, '').replace(/-/g, ' ');
+
+    const teamId = resolveF1TeamByOutcome(rawName, f1TeamsMap);
+    teamProbs.push({
+      teamId: teamId ?? `__raw__${rawName}`,
+      _rawName: rawName,
+      percent: Math.max(0, Math.min(100, Math.round(percent)))
+    });
+  }
+
+  return teamProbs.sort((a, b) => b.percent - a.percent).slice(0, 3);
+}
+
+async function fetchF1TeamsFromPolymarket(inputSlugOrUrl, f1TeamsMap) {
+  const slug = extractPolymarketSlug(inputSlugOrUrl);
+  if (!slug) return null;
+
+  // 先尝试单个 market（适合分站赛多选市场）
+  let market = null;
+  try {
+    market = await fetchPolymarketMarketBySlug(slug);
+  } catch (err) {
+    if (!String(err?.message ?? '').includes('HTTP 404')) throw err;
+  }
+  if (market) return buildF1TeamsFromPolymarketMarket(market, f1TeamsMap);
+
+  // 再尝试 event（适合总冠军等多个 Yes/No 子市场）
+  const event = await fetchPolymarketEventBySlug(slug);
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  if (markets.length === 0) throw new Error(`Polymarket 事件（${slug}）没有 markets 数据`);
+
+  // 判断是 Yes/No 子市场模式还是多选市场模式
+  const firstOutcomes = parseJsonArrayField(markets[0]?.outcomes ?? '[]', 'outcomes', '').map(s => String(s).toLowerCase().trim());
+  const isYesNoEvent = firstOutcomes.includes('yes') && firstOutcomes.includes('no');
+
+  if (isYesNoEvent) {
+    return buildF1TeamsFromPolymarketYesNoEvent(event, f1TeamsMap);
+  }
+
+  // 多选市场：选 outcomes 最多的那个
+  const mainMarket = markets.reduce((best, m) => {
+    const blen = parseJsonArrayField(best?.outcomes ?? '[]', 'outcomes', 'best').length;
+    const mlen = parseJsonArrayField(m?.outcomes ?? '[]', 'outcomes', 'cur').length;
+    return mlen > blen ? m : best;
+  });
+  return buildF1TeamsFromPolymarketMarket(mainMarket, f1TeamsMap);
+}
+
 // ── F1：从 Lark 读取事件数据 ───────────────────────────
-// Lark 表头（A1:I2）：main title | sub title | footer | team_1 | percent_1 | team_2 | percent_2 | team_3 | percent_3
+// 横向表头（A1:J1）：main title | sub title | footer | team_1 | percent_1 | team_2 | percent_2 | team_3 | percent_3
+// 竖向配置区（A列=key, B列=value）：market_slug = <Polymarket URL>
 async function fetchF1EventsFromLark(config, accessToken) {
   const sheetId = String(config.f1SheetId ?? '').trim();
   if (!sheetId) {
@@ -614,7 +718,9 @@ async function fetchF1EventsFromLark(config, accessToken) {
   if (!spreadsheetToken) {
     throw new Error('lark.config.json 缺少 spreadsheetToken 或 f1SpreadsheetToken');
   }
-  const range = encodeURIComponent(`${sheetId}!A1:I2`);
+
+  // 读取足够大的范围以覆盖竖向配置区（最多 30 行）
+  const range = encodeURIComponent(`${sheetId}!A1:J30`);
   const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
 
   const res = await fetch(url, {
@@ -633,6 +739,7 @@ async function fetchF1EventsFromLark(config, accessToken) {
     throw new Error('F1 表格没有可用数据，至少需要 1 行表头和 1 行内容');
   }
 
+  // 第1行横向表头，第2行横向数据
   const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
   const row = values[1].map(cell => String(cell ?? '').trim());
 
@@ -641,10 +748,22 @@ async function fetchF1EventsFromLark(config, accessToken) {
     return idx !== -1 ? row[idx] : '';
   }
 
+  // 扫描竖向配置区：A列=key, B列=value（如 market_slug）
+  const kvAliases = { market_slug: 'polymarket_url', polymarket_url: 'polymarket_url', polymarket_slug: 'polymarket_url' };
+  const kvConfig = {};
+  for (const rowData of values) {
+    const key = String(rowData[0] ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+    const val = String(rowData[1] ?? '').trim();
+    if (kvAliases[key] && val) {
+      kvConfig[kvAliases[key]] = val;
+    }
+  }
+
   return {
     mainTitle: col('main title'),
     subTitle: col('sub title'),
     footer: col('footer'),
+    polymarket_url: kvConfig.polymarket_url ?? '',
     teams: [
       { teamId: col('team_1'), percent: Number(col('percent_1')) || 33 },
       { teamId: col('team_2'), percent: Number(col('percent_2')) || 33 },
@@ -715,6 +834,15 @@ function buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, cop
   const translated = translationsMap[lang] ?? sourceData;
 
   const teamsData = sourceData.teams.map(entry => {
+    // Polymarket 未识别的车队/车手：直接用原始名称，不查 CSV
+    if (String(entry.teamId ?? '').startsWith('__raw__')) {
+      return {
+        name: String(entry._rawName ?? entry.teamId.replace('__raw__', '')).trim(),
+        logo: '',
+        percent: entry.percent
+      };
+    }
+
     const teamInfo = f1TeamsMap[entry.teamId] ?? {};
     const teamName = teamInfo[lang] ?? teamInfo['en'] ?? entry.teamId;
     const logoPath = findF1LogoPath(entry.teamId, f1TeamsMap);
@@ -1910,9 +2038,30 @@ async function main() {
     const accessToken = await getLarkTenantAccessToken(larkConfig);
     const sourceData = await fetchF1EventsFromLark(larkConfig, accessToken);
     console.log('  ✅ 已读取 F1 事件数据');
-    console.log(`     车队：${sourceData.teams.map(t => `${t.teamId}(${t.percent}%)`).join(', ')}`);
 
     const f1TeamsMap = loadTeams(F1_TEAMS_CSV);
+
+    // ── 若填了 Polymarket URL，自动抓取前3名概率覆盖手动数据 ──
+    const polyUrl = String(sourceData.polymarket_url ?? '').trim();
+    if (polyUrl) {
+      console.log(`\n检测到 Polymarket URL，正在拉取数据：${polyUrl}`);
+      try {
+        const polyTeams = await fetchF1TeamsFromPolymarket(polyUrl, f1TeamsMap);
+        if (polyTeams && polyTeams.length > 0) {
+          sourceData.teams = polyTeams;
+          console.log(`  ✅ Polymarket 数据已加载（${polyTeams.length} 支车队/车手）`);
+          console.log(`     ${polyTeams.map(t => `${t._rawName ?? t.teamId}(${t.percent}%)`).join(', ')}`);
+        } else {
+          console.warn('  ⚠️  Polymarket 返回数据为空，使用 Lark 手动数据');
+          console.log(`     车队：${sourceData.teams.map(t => `${t.teamId}(${t.percent}%)`).join(', ')}`);
+        }
+      } catch (err) {
+        console.warn(`  ⚠️  Polymarket 拉取失败（${err.message}），使用 Lark 手动数据`);
+        console.log(`     车队：${sourceData.teams.map(t => `${t.teamId}(${t.percent}%)`).join(', ')}`);
+      }
+    } else {
+      console.log(`     车队：${sourceData.teams.map(t => `${t.teamId}(${t.percent}%)`).join(', ')}`);
+    }
 
     // ── 背景图：优先用语言命名文件（zh-CN.png），否则用通用背景（BG.png）──
     const F1_BG_DIR = path.join(BASE_DIR, 'backgrounds-F1');
