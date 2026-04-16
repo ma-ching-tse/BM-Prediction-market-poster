@@ -2050,7 +2050,7 @@ async function main() {
         if (polyTeams && polyTeams.length > 0) {
           sourceData.teams = polyTeams;
           console.log(`  ✅ Polymarket 数据已加载（${polyTeams.length} 支车队/车手）`);
-          console.log(`     ${polyTeams.map(t => `${t._rawName ?? t.teamId}(${t.percent}%)`).join(', ')}`);
+          console.log(`     ${polyTeams.map(t => `${String(t._rawName ?? t.teamId).split(/\s+/)[0]}(${t.percent}%)`).join(', ')}`);
         } else {
           console.warn('  ⚠️  Polymarket 返回数据为空，使用 Lark 手动数据');
           console.log(`     车队：${sourceData.teams.map(t => `${t.teamId}(${t.percent}%)`).join(', ')}`);
