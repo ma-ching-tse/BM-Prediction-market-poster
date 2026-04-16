@@ -28,8 +28,12 @@ async function compressToTarget(inputPath, outputPath, maxKB = MAX_SIZE_KB) {
 }
 
 const BASE_DIR = __dirname;
-const TEAMS_CSV   = path.join(BASE_DIR, 'teams.csv');
-const BG_DIR      = path.join(BASE_DIR, 'backgrounds');
+const TEAMS_CSV    = path.join(BASE_DIR, 'teams.csv');
+const FOOTBALL_TEAMS_CSV = path.join(BASE_DIR, 'football_teams.csv');
+const F1_TEAMS_CSV = path.join(BASE_DIR, 'teams_f1.csv');
+const F1_ICON_DIR  = path.join(BASE_DIR, 'assets', 'logos', 'F1 车队');
+const BG_DIR       = path.join(BASE_DIR, 'backgrounds-NBA');
+const WORLD_CUP_BG_DIR = path.join(BASE_DIR, 'backgrounds- football');
 const OUTPUT_DIR  = path.join(BASE_DIR, 'output');
 const POSTER_COPY_CONFIG = path.join(BASE_DIR, 'poster.copy.json');
 
@@ -46,6 +50,19 @@ const TEMPLATE_CONFIGS = {
     file: path.join(BASE_DIR, 'poster.comprehensive-event.html'),
     outputPrefix: '综合事件',
     outputSubDir: '综合事件'
+  },
+  worldcup: {
+    aliases: ['worldcup', 'world-cup', 'world cup', '世界杯', '世界杯模版'],
+    file: path.join(BASE_DIR, 'poster.world-cup.html'),
+    outputPrefix: '世界杯',
+    outputSubDir: '世界杯',
+    bgDir: WORLD_CUP_BG_DIR
+  },
+  f1: {
+    aliases: ['f1', 'f1赛车', 'F1', 'formula1', 'formula-1'],
+    file: path.join(BASE_DIR, 'poster.f1.html'),
+    outputPrefix: 'F1',
+    outputSubDir: 'F1 车队'
   }
 };
 
@@ -74,7 +91,9 @@ function parseCliOptions(argv = process.argv.slice(2)) {
         '用法：node generate.js [--template <模板名>]',
         '可用模板：',
         '  classic        标准赛事卡片模板（默认）',
-        '  comprehensive  综合事件模版'
+        '  comprehensive  综合事件模版',
+        '  worldcup       世界杯模版',
+        '  f1             F1车队海报模版'
       ].join('\n'));
       process.exit(0);
     }
@@ -163,6 +182,9 @@ function loadLarkConfig() {
     sheetId: String(config.sheetId ?? '').trim(),
     range: String(config.range ?? 'A1:E500').trim(),
     comprehensiveSheetId: String(config.comprehensiveSheetId ?? '').trim(),
+    worldCupSheetId: String(config.worldCupSheetId ?? '').trim(),
+    f1SheetId: String(config.f1SheetId ?? '').trim(),
+    f1SpreadsheetToken: String(config.f1SpreadsheetToken ?? '').trim(),
     sourceLang: String(config.sourceLang ?? 'zh-CN').trim(),
     anthropicApiKey: String(config.anthropicApiKey ?? '').trim()
   };
@@ -571,6 +593,164 @@ function findLogoPath(teamId, teamsMap) {
   return fs.existsSync(logoPath) ? logoPath : null;
 }
 
+// ── F1：Logo 文件路径（assets/logos/F1 车队/constructors_{logo}.png）──
+function findF1LogoPath(teamId, f1TeamsMap) {
+  const logoName = f1TeamsMap[teamId]?.['logo'];
+  if (!logoName) return null;
+  const logoPath = path.join(F1_ICON_DIR, `constructors_${logoName}.png`);
+  return fs.existsSync(logoPath) ? logoPath : null;
+}
+
+// ── F1：从 Lark 读取事件数据 ───────────────────────────
+// Lark 表头（A1:I2）：main title | sub title | footer | team_1 | percent_1 | team_2 | percent_2 | team_3 | percent_3
+async function fetchF1EventsFromLark(config, accessToken) {
+  const sheetId = String(config.f1SheetId ?? '').trim();
+  if (!sheetId) {
+    throw new Error('lark.config.json 缺少 f1SheetId');
+  }
+
+  // 优先用 f1SpreadsheetToken（F1 可能在独立表格），否则沿用主表格
+  const spreadsheetToken = config.f1SpreadsheetToken || config.spreadsheetToken;
+  if (!spreadsheetToken) {
+    throw new Error('lark.config.json 缺少 spreadsheetToken 或 f1SpreadsheetToken');
+  }
+  const range = encodeURIComponent(`${sheetId}!A1:I2`);
+  const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark F1 表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('F1 表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
+  const row = values[1].map(cell => String(cell ?? '').trim());
+
+  function col(name) {
+    const idx = headers.indexOf(name);
+    return idx !== -1 ? row[idx] : '';
+  }
+
+  return {
+    mainTitle: col('main title'),
+    subTitle: col('sub title'),
+    footer: col('footer'),
+    teams: [
+      { teamId: col('team_1'), percent: Number(col('percent_1')) || 33 },
+      { teamId: col('team_2'), percent: Number(col('percent_2')) || 33 },
+      { teamId: col('team_3'), percent: Number(col('percent_3')) || 34 }
+    ]
+  };
+}
+
+// ── F1：翻译标题/副标题/footer（不翻译车队名，CSV 里已有）──
+async function translateF1Titles(sourceData, targetLangs, fromLang = 'zh-CN') {
+  const texts = [sourceData.mainTitle, sourceData.subTitle, sourceData.footer];
+  const result = {};
+
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    result[lang] = {
+      mainTitle: translated[0],
+      subTitle: translated[1],
+      footer: translated[2]
+    };
+    console.log(' ✅');
+  }
+
+  return result;
+}
+
+// ── F1：翻译结果回填到 Lark 表格（第 3 行起，A~D 列）──
+async function writeBackF1TranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId) {
+  const langs = Object.keys(translationsMap);
+  const rows = langs.map(lang => {
+    const d = translationsMap[lang];
+    return [
+      lang,
+      String(d.mainTitle ?? ''),
+      String(d.subTitle ?? ''),
+      String(d.footer ?? '')
+    ];
+  });
+
+  const startRow = 3;
+  const endRow = startRow + rows.length - 1;
+  const range = `${sheetId}!A${startRow}:D${endRow}`;
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ valueRange: { range, values: rows } })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`F1 翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+  return rows.length;
+}
+
+// ── F1：构建海报 payload ──────────────────────────────
+function buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, copyConfig) {
+  const templateCopy = copyConfig?.f1 ?? {};
+  const defaultCopy = templateCopy?.default ?? {};
+  const langCopy = templateCopy?.[lang] ?? {};
+  const mergedCopy = { ...defaultCopy, ...langCopy };
+
+  const translated = translationsMap[lang] ?? sourceData;
+
+  const teamsData = sourceData.teams.map(entry => {
+    const teamInfo = f1TeamsMap[entry.teamId] ?? {};
+    const teamName = teamInfo[lang] ?? teamInfo['en'] ?? entry.teamId;
+    const logoPath = findF1LogoPath(entry.teamId, f1TeamsMap);
+
+    if (!teamInfo[lang] && !teamInfo['en']) {
+      warnOnce(`f1-team-missing:${entry.teamId}`, `F1车队 ID 不存在：${entry.teamId}`);
+    }
+    if (teamInfo[lang] && !logoPath) {
+      warnOnce(`f1-logo-missing:${entry.teamId}`, `找不到 F1 Logo：${entry.teamId}`);
+    }
+
+    return {
+      name: teamName,
+      logo: logoPath ?? '',
+      percent: entry.percent
+    };
+  });
+
+  return {
+    teams: teamsData,
+    copy: {
+      title: String(translated.mainTitle ?? '').trim(),
+      subtitle: String(translated.subTitle ?? '').trim(),
+      footer: String(translated.footer ?? '').trim(),
+      titleFontSize: Number(mergedCopy.titleFontSize ?? 110),
+      titleLineHeight: Number(mergedCopy.titleLineHeight ?? 1.2),
+      titleMaxWidth: Number(mergedCopy.titleMaxWidth ?? 824),
+      subtitleFontSize: Number(mergedCopy.subtitleFontSize ?? 46),
+      subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3),
+      teamNameFontSize: Number(mergedCopy.teamNameFontSize ?? 52),
+      headerImage: String(mergedCopy.headerImage ?? 'assets/f1_car.png'),
+      brandLogo: String(defaultCopy.brandLogo ?? '')
+    }
+  };
+}
+
 // ── 构建单张海报的 games 数据（指定语种）──
 function buildGamesData(gamesRows, teamsMap, lang) {
   return gamesRows.map(row => {
@@ -786,6 +966,214 @@ function roundWinRatesToIntegers(homeRaw, awayRaw) {
   return { homeWin, awayWin };
 }
 
+function extractPolymarketSlug(input) {
+  const raw = String(input ?? '').trim();
+  if (!raw) return '';
+
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const eventIndex = parts.findIndex(part => part === 'event' || part === 'market');
+    if (eventIndex !== -1 && parts[eventIndex + 1]) {
+      return String(parts[eventIndex + 1]).trim();
+    }
+    const candidate = parts[parts.length - 1];
+    if (candidate) return String(candidate).trim();
+  } catch {
+    return raw.replace(/^\/+|\/+$/g, '');
+  }
+
+  return raw.replace(/^\/+|\/+$/g, '');
+}
+
+function normalizeConfigKey(key) {
+  return String(key ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+function parseComprehensiveScenarioConfig(values, startRow = 20, endRow = 35) {
+  const config = {};
+  for (let rowNum = startRow; rowNum <= endRow; rowNum++) {
+    const row = values[rowNum - 1] ?? [];
+    const key = normalizeConfigKey(row[0]);
+    const value = String(row[1] ?? '').trim();
+    if (!key) continue;
+    config[key] = value;
+  }
+  return config;
+}
+
+function resolveWorldCupTeamByOutcome(outcomeText, footballTeamsMap) {
+  const normalizedOutcome = normalizeOutcomeToken(outcomeText);
+  if (!normalizedOutcome) return null;
+
+  for (const team of Object.values(footballTeamsMap)) {
+    const aliases = [
+      team?.id,
+      team?.en,
+      team?.['zh-CN'],
+      team?.['zh-TW'],
+      team?.ja
+    ]
+      .map(item => normalizeOutcomeToken(item))
+      .filter(Boolean);
+
+    if (aliases.some(alias => alias === normalizedOutcome)) {
+      return team;
+    }
+  }
+
+  const manualAliases = [
+    ['usa', ['unitedstates', 'unitedstatesofamerica', 'us']],
+    ['south_korea', ['korearepublic', 'republicofkorea', 'korea']],
+    ['england', ['englandnationalteam']],
+    ['netherlands', ['holland']],
+    ['ivory_coast', ['cotedivoire']]
+  ];
+
+  for (const [teamId, aliases] of manualAliases) {
+    if (!aliases.includes(normalizedOutcome)) continue;
+    if (footballTeamsMap[teamId]) return footballTeamsMap[teamId];
+  }
+
+  return null;
+}
+
+function buildWorldCupCardsFromPolymarketMarket(market, cardCount, footballTeamsMap) {
+  const slug = String(market?.slug ?? '').trim() || 'unknown';
+  const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(item => String(item ?? '').trim());
+  const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
+  if (!Array.isArray(outcomes) || !Array.isArray(prices) || outcomes.length !== prices.length) {
+    throw new Error(`Polymarket 市场数据异常（${slug}）：outcomes 与 outcomePrices 不匹配`);
+  }
+
+  const cards = outcomes
+    .map((outcome, index) => {
+      const percent = toPercentProbability(prices[index]);
+      if (!Number.isFinite(percent)) return null;
+      const rounded = Math.max(0, Math.min(100, Math.round(percent)));
+      const team = resolveWorldCupTeamByOutcome(outcome, footballTeamsMap);
+      const displayText = String(team?.['zh-CN'] ?? outcome).trim();
+
+      let image = '';
+      if (team?.logo) {
+        const rawLogoPath = String(team.logo).trim();
+        const absLogoPath = path.isAbsolute(rawLogoPath) ? rawLogoPath : path.join(BASE_DIR, rawLogoPath);
+        if (fs.existsSync(absLogoPath)) {
+          image = `file://${absLogoPath}`;
+        }
+      }
+
+      return {
+        text: displayText,
+        percent: rounded,
+        image
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, Math.max(2, Math.min(4, Number(cardCount) || 3)));
+
+  return cards;
+}
+
+function extractTeamNameFromQuestion(question = '') {
+  const raw = String(question ?? '').trim();
+  const match = raw.match(/^Will\s+(.+?)\s+win\b/i);
+  if (match && match[1]) return String(match[1]).trim();
+  return raw;
+}
+
+function buildWorldCupCardsFromPolymarketEvent(event, cardCount, footballTeamsMap) {
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  const yesAliases = new Set(['yes', 'y']);
+  const cards = [];
+
+  for (const market of markets) {
+    const slug = String(market?.slug ?? '').trim() || String(event?.slug ?? 'event');
+    const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(item => String(item ?? '').trim());
+    const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
+    if (!Array.isArray(outcomes) || !Array.isArray(prices) || outcomes.length !== prices.length) continue;
+
+    let yesIndex = outcomes.findIndex(outcome => yesAliases.has(normalizeOutcomeToken(outcome)));
+    if (yesIndex === -1 && outcomes.length === 2) {
+      yesIndex = 0;
+    }
+    if (yesIndex === -1) continue;
+
+    const percent = toPercentProbability(prices[yesIndex]);
+    if (!Number.isFinite(percent)) continue;
+    const rounded = Math.max(0, Math.min(100, Math.round(percent)));
+
+    const teamLabel = String(market?.groupItemTitle ?? '').trim() || extractTeamNameFromQuestion(market?.question ?? '');
+    if (!teamLabel) continue;
+
+    const team = resolveWorldCupTeamByOutcome(teamLabel, footballTeamsMap);
+    const displayText = String(team?.['zh-CN'] ?? teamLabel).trim();
+
+    let image = '';
+    if (team?.logo) {
+      const rawLogoPath = String(team.logo).trim();
+      const absLogoPath = path.isAbsolute(rawLogoPath) ? rawLogoPath : path.join(BASE_DIR, rawLogoPath);
+      if (fs.existsSync(absLogoPath)) {
+        image = `file://${absLogoPath}`;
+      }
+    }
+
+    cards.push({ text: displayText, percent: rounded, image });
+  }
+
+  return cards
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, Math.max(2, Math.min(4, Number(cardCount) || 3)));
+}
+
+async function buildWorldCupCardsFromPolymarketInput(inputSlugOrUrl, cardCount, footballTeamsMap) {
+  const slug = extractPolymarketSlug(inputSlugOrUrl);
+  if (!slug) return [];
+
+  try {
+    const market = await fetchPolymarketMarketBySlug(slug);
+    return buildWorldCupCardsFromPolymarketMarket(market, cardCount, footballTeamsMap);
+  } catch (err) {
+    const message = String(err?.message ?? '');
+    if (!message.includes('HTTP 404')) throw err;
+  }
+
+  const event = await fetchPolymarketEventBySlug(slug);
+  return buildWorldCupCardsFromPolymarketEvent(event, cardCount, footballTeamsMap);
+}
+
+async function writeBackComprehensiveCardsToLark(cards, accessToken, spreadsheetToken, sheetId) {
+  const MAX_CARDS = 4;
+  const row = [];
+  for (let i = 0; i < MAX_CARDS; i++) {
+    const card = cards[i];
+    row.push(String(card?.text ?? ''), card?.percent ?? '');
+  }
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({
+      valueRange: {
+        range: `${sheetId}!E2:L2`,
+        values: [row]
+      }
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`回填世界杯卡片失败：${data.msg || res.status}`);
+  }
+}
+
 async function fetchPolymarketMarketBySlug(slug) {
   const url = `${POLYMARKET_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`;
   const res = await fetch(url);
@@ -793,6 +1181,17 @@ async function fetchPolymarketMarketBySlug(slug) {
     const text = await res.text().catch(() => '');
     const detail = text ? `，响应：${text.slice(0, 120)}` : '';
     throw new Error(`Polymarket 读取失败（${slug}）：HTTP ${res.status}${detail}`);
+  }
+  return res.json();
+}
+
+async function fetchPolymarketEventBySlug(slug) {
+  const url = `${POLYMARKET_BASE_URL}/events/slug/${encodeURIComponent(slug)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const detail = text ? `，响应：${text.slice(0, 120)}` : '';
+    throw new Error(`Polymarket 事件读取失败（${slug}）：HTTP ${res.status}${detail}`);
   }
   return res.json();
 }
@@ -1157,14 +1556,14 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap) {
 }
 
 // ── 综合事件：从 Lark 读取 ──────────────────────────────────
-async function fetchComprehensiveEventsFromLark(config, accessToken) {
-  const sheetId = String(config.comprehensiveSheetId ?? '').trim();
-  if (!sheetId) {
-    throw new Error('lark.config.json 缺少 comprehensiveSheetId');
+async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sheetLabel = 'comprehensiveSheetId', templateKey = 'comprehensive') {
+  const resolvedSheetId = String(sheetId ?? '').trim();
+  if (!resolvedSheetId) {
+    throw new Error(`lark.config.json 缺少 ${sheetLabel}`);
   }
 
   const spreadsheetToken = config.spreadsheetToken;
-  const range = encodeURIComponent(`${sheetId}!A1:J2`);
+  const range = encodeURIComponent(`${resolvedSheetId}!A1:L35`);
   const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
 
   const res = await fetch(url, {
@@ -1191,15 +1590,58 @@ async function fetchComprehensiveEventsFromLark(config, accessToken) {
     return idx !== -1 ? row[idx] : '';
   }
 
+  const MAX_CARDS = 4;
+  const cardIndexes = headers
+    .map((header) => {
+      const m = /^(\d+)$/.exec(header);
+      if (!m) return null;
+      const index = Number(m[1]);
+      if (!Number.isInteger(index) || index <= 0) return null;
+      if (!headers.includes(`percent_${index}`)) return null;
+      return index;
+    })
+    .filter((v) => v !== null)
+    .sort((a, b) => a - b)
+    .slice(0, MAX_CARDS);
+
+  const cards = (cardIndexes.length > 0 ? cardIndexes : [1, 2, 3])
+    .map((index) => {
+      const percentRaw = Number(col(`percent_${index}`));
+      return {
+        text: col(String(index)),
+        percent: Number.isFinite(percentRaw) ? percentRaw : 50
+      };
+    });
+
+  if (templateKey === 'worldcup') {
+    const scenarioConfig = parseComprehensiveScenarioConfig(values, 20, 35);
+    const scenarioType = normalizeConfigKey(scenarioConfig.scenario_type);
+    const marketSlugInput = String(scenarioConfig.market_slug || scenarioConfig.market_url || '').trim();
+    const cardCount = Math.max(2, Math.min(4, Number(scenarioConfig.card_count) || cards.length || 3));
+
+    if (scenarioType && !['worldcup_winner', 'group_winner'].includes(scenarioType)) {
+      warnOnce(`worldcup-scenario-unknown:${scenarioType}`, `未知 scenario_type：${scenarioType}（支持 worldcup_winner / group_winner）`);
+    }
+
+    if (marketSlugInput) {
+      const footballTeamsMap = loadTeams(FOOTBALL_TEAMS_CSV);
+      const autoCards = await buildWorldCupCardsFromPolymarketInput(marketSlugInput, cardCount, footballTeamsMap);
+      const key = extractPolymarketSlug(marketSlugInput) || marketSlugInput;
+
+      if (autoCards.length > 0) {
+        cards.splice(0, cards.length, ...autoCards);
+        await writeBackComprehensiveCardsToLark(cards, accessToken, spreadsheetToken, resolvedSheetId);
+      } else {
+        warnOnce(`worldcup-no-cards:${key}`, `Polymarket 输入未解析出可用卡片：${key}`);
+      }
+    }
+  }
+
   return {
     mainTitle: col('main title'),
     subTitle: col('sub title'),
     footer: col('footer'),
-    cards: [
-      { text: col('1'), percent: Number(col('percent_1')) || 50 },
-      { text: col('2'), percent: Number(col('percent_2')) || 50 },
-      { text: col('3'), percent: Number(col('percent_3')) || 50 }
-    ]
+    cards
   };
 }
 
@@ -1219,7 +1661,7 @@ async function translateOneText(text, fromLang, toLang) {
 }
 
 async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'zh-CN') {
-  // 需要翻译的文本：标题、副标题、footer、3 张卡片问题
+  // 需要翻译的文本：标题、副标题、footer、N 张卡片问题
   const texts = [
     sourceData.mainTitle,
     sourceData.subTitle,
@@ -1247,28 +1689,60 @@ async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'z
   return result;
 }
 
-// ── 综合事件：翻译结果回填到 Lark 表格（第 3 行起，每行一种语言）──
-async function writeBackTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId) {
-  const langs = Object.keys(translationsMap);
-  const rows = langs.map(lang => {
+// ── 综合事件：翻译结果回填到 Lark 表格（第 3 行起，仅回填非源语言）──
+async function writeBackTranslationsToLark(
+  sourceData,
+  translationsMap,
+  accessToken,
+  spreadsheetToken,
+  sheetId,
+  sourceLang = 'zh-CN'
+) {
+  const sourceLangNormalized = String(sourceLang ?? '').trim().toLowerCase();
+  const langs = Object.keys(translationsMap)
+    .filter(lang => String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized);
+
+  const MAX_CARDS = 4;
+  const cardCount = Math.max(1, Math.min(MAX_CARDS, Array.isArray(sourceData.cards) ? sourceData.cards.length : 0));
+  const totalColumns = 4 + (MAX_CARDS * 2); // A:lang B:title C:subtitle D:footer E~L:cards
+  const blankRow = Array.from({ length: totalColumns }, () => '');
+
+  const translatedRows = langs.map(lang => {
     const d = translationsMap[lang];
-    return [
+    const row = [
       lang,
       String(d.mainTitle ?? ''),
       String(d.subTitle ?? ''),
-      String(d.footer ?? ''),
-      String(d.cards?.[0]?.text ?? ''),
-      sourceData.cards[0].percent,
-      String(d.cards?.[1]?.text ?? ''),
-      sourceData.cards[1].percent,
-      String(d.cards?.[2]?.text ?? ''),
-      sourceData.cards[2].percent
+      String(d.footer ?? '')
     ];
+
+    for (let i = 0; i < cardCount; i++) {
+      row.push(
+        String(d.cards?.[i]?.text ?? ''),
+        sourceData.cards?.[i]?.percent ?? ''
+      );
+    }
+    while (row.length < totalColumns) row.push('');
+    return row;
   });
+
+  if (translatedRows.length === 0) return 0;
+
+  // 预留 A20 开始的配置区（scenario_type / market_slug / card_count），
+  // 翻译回填只覆盖 A3~L19，避免清空用户配置。
+  const MAX_TRANSLATION_ROWS = 17; // rows 3..19
+  if (translatedRows.length > MAX_TRANSLATION_ROWS) {
+    throw new Error(`翻译语种过多（${translatedRows.length}），超过表格预留区域上限 ${MAX_TRANSLATION_ROWS}`);
+  }
+
+  // 额外填充空行，清掉旧残留回填内容
+  const CLEAR_WINDOW_ROWS = MAX_TRANSLATION_ROWS;
+  const rows = Array.from({ length: CLEAR_WINDOW_ROWS }, (_, i) => translatedRows[i] ?? blankRow);
 
   const startRow = 3;
   const endRow = startRow + rows.length - 1;
-  const range = `${sheetId}!A${startRow}:J${endRow}`;
+  const endCol = indexToColumnLabel(totalColumns - 1);
+  const range = `${sheetId}!A${startRow}:${endCol}${endRow}`;
 
   const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
     method: 'PUT',
@@ -1283,18 +1757,44 @@ async function writeBackTranslationsToLark(sourceData, translationsMap, accessTo
   if (!res.ok || data.code !== 0) {
     throw new Error(`翻译回填 Lark 失败：${data.msg || res.status}`);
   }
-  return rows.length;
+  return translatedRows.length;
 }
 
 // ── 综合事件：构建海报 payload ──────────────────────────────
-function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig) {
-  const templateCopy = copyConfig?.comprehensive ?? {};
+function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig, templateKey = 'comprehensive') {
+  const templateCopy = copyConfig?.[templateKey] ?? copyConfig?.comprehensive ?? {};
   const defaultCopy = templateCopy?.default ?? {};
   const langCopy = templateCopy?.[lang] ?? {};
   const mergedCopy = { ...defaultCopy, ...langCopy };
 
   // Use translation for this lang; fall back to source (zh-CN) data
   const translated = translationsMap[lang] ?? sourceData;
+
+  const WORLD_CUP_LOGO_DIR = path.join(BASE_DIR, 'assets', 'logos', '足球赛事', '世界杯');
+  const SUPPORTED_EXTS = ['.png', '.jpg', '.jpeg', '.webp'];
+  const worldCupLogoFiles = (templateKey === 'worldcup' && fs.existsSync(WORLD_CUP_LOGO_DIR))
+    ? fs.readdirSync(WORLD_CUP_LOGO_DIR)
+      .filter(file => SUPPORTED_EXTS.includes(path.extname(file).toLowerCase()))
+      .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    : [];
+
+  function normalizeText(value) {
+    return String(value ?? '').toLowerCase().replace(/[\s\-_:：，。、“”"'`·/\\()（）[\]{}!?]+/g, '');
+  }
+
+  function resolveWorldCupLogoPath(cardText = '', index = 0) {
+    if (!worldCupLogoFiles.length) return '';
+
+    const normalizedCardText = normalizeText(cardText);
+    const match = worldCupLogoFiles.find(file => {
+      const name = path.parse(file).name.replace(/^世界杯[-_]?/, '');
+      const normalizedName = normalizeText(name);
+      return normalizedName && normalizedCardText.includes(normalizedName);
+    });
+    if (match) return `file://${path.join(WORLD_CUP_LOGO_DIR, match)}`;
+    const fallback = worldCupLogoFiles[index % worldCupLogoFiles.length];
+    return fallback ? `file://${path.join(WORLD_CUP_LOGO_DIR, fallback)}` : '';
+  }
 
   return {
     games: sourceData.cards.map(card => ({
@@ -1316,7 +1816,10 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
       cardTextLineHeight: Number(mergedCopy.cardTextLineHeight ?? 1.2),
       cards: (translated.cards ?? sourceData.cards).map((card, i) => ({
         text: String(card.text ?? '').trim(),
-        image: String(defaultCopy.cards?.[i]?.image ?? '').trim(),
+        image: templateKey === 'worldcup'
+          ? (String(sourceData.cards?.[i]?.image ?? '').trim()
+            || resolveWorldCupLogoPath(sourceData.cards?.[i]?.text ?? card.text, i))
+          : String(defaultCopy.cards?.[i]?.image ?? '').trim(),
         valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
       }))
     }
@@ -1357,10 +1860,10 @@ async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputP
 }
 
 // ── 公共：扫描背景图、创建输出目录、启动浏览器 ──────────────
-function scanBgFiles() {
-  const bgFiles = fs.readdirSync(BG_DIR).filter(f => f.endsWith('.png') || f.endsWith('.jpg'));
+function scanBgFiles(bgDir = BG_DIR) {
+  const bgFiles = fs.readdirSync(bgDir).filter(f => f.endsWith('.png') || f.endsWith('.jpg'));
   if (bgFiles.length === 0) {
-    console.error('❌ backgrounds/ 目录下没有找到背景图，请先添加语种背景图（如 zh-CN.png）');
+    console.error(`❌ ${path.basename(bgDir)}/ 目录下没有找到背景图，请先添加语种背景图（如 zh-CN.png）`);
     process.exit(1);
   }
   return bgFiles;
@@ -1400,15 +1903,116 @@ async function main() {
   const copyConfig = loadPosterCopyConfig();
   console.log(`\n当前模板：${templateKey} (${path.basename(templateConfig.file)})`);
 
-  // ── 综合事件流程 ──────────────────────────────────────────
-  if (templateKey === 'comprehensive') {
-    console.log('\n从 Lark 综合事件表格拉取数据...');
+  // ── F1 流程 ───────────────────────────────────────────────
+  if (templateKey === 'f1') {
+    console.log('\n从 Lark F1 表格拉取数据...');
     const larkConfig = loadLarkConfig();
     const accessToken = await getLarkTenantAccessToken(larkConfig);
-    const sourceData = await fetchComprehensiveEventsFromLark(larkConfig, accessToken);
-    console.log('  ✅ 已读取综合事件数据');
+    const sourceData = await fetchF1EventsFromLark(larkConfig, accessToken);
+    console.log('  ✅ 已读取 F1 事件数据');
+    console.log(`     车队：${sourceData.teams.map(t => `${t.teamId}(${t.percent}%)`).join(', ')}`);
 
-    const bgFiles = scanBgFiles();
+    const f1TeamsMap = loadTeams(F1_TEAMS_CSV);
+
+    // ── 背景图：优先用语言命名文件（zh-CN.png），否则用通用背景（BG.png）──
+    const F1_BG_DIR = path.join(BASE_DIR, 'backgrounds-F1');
+    const KNOWN_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi']);
+    // 没有语言特定背景时，这些语言都生成（与 Lark 表行对齐）
+    const F1_ALL_TARGET_LANGS = ['zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi'];
+
+    const langBgMap = {};   // { lang: absolutePath }
+    let genericBgPath = '';
+
+    if (fs.existsSync(F1_BG_DIR)) {
+      const bgFileNames = fs.readdirSync(F1_BG_DIR).filter(f => /\.(png|jpg)$/i.test(f));
+      for (const f of bgFileNames) {
+        const lang = path.parse(f).name;
+        if (KNOWN_LANGS.has(lang)) {
+          langBgMap[lang] = path.join(F1_BG_DIR, f);
+        } else if (!genericBgPath) {
+          genericBgPath = path.join(F1_BG_DIR, f);
+        }
+      }
+    }
+    if (!genericBgPath && Object.keys(langBgMap).length === 0) {
+      console.warn('⚠️  backgrounds-F1/ 目录下没有背景图，将使用纯黑背景');
+    }
+
+    // ── 目标语种：有语言背景则由背景文件决定；否则全量翻译 ──
+    const sourceLang = larkConfig.sourceLang || 'zh-CN';
+    const hasLangBg = Object.keys(langBgMap).length > 0;
+    const targetLangs = hasLangBg
+      ? Object.keys(langBgMap).filter(l => l !== sourceLang)
+      : F1_ALL_TARGET_LANGS;
+
+    let translationsMap = { [sourceLang]: sourceData };
+
+    if (targetLangs.length > 0) {
+      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
+      const translated = await translateF1Titles(sourceData, targetLangs, sourceLang);
+      translationsMap = { ...translationsMap, ...translated };
+
+      console.log('\n回填翻译结果到 Lark 表格...');
+      const f1Token = larkConfig.f1SpreadsheetToken || larkConfig.spreadsheetToken;
+      const writtenCount = await writeBackF1TranslationsToLark(
+        sourceData, translationsMap,
+        accessToken, f1Token, larkConfig.f1SheetId
+      );
+      console.log(`  ✅ 已回填 ${writtenCount} 种语言`);
+    }
+
+    const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
+    const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
+
+    const langsToGenerate = [sourceLang, ...targetLangs];
+
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
+
+    console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+    for (const lang of langsToGenerate) {
+      const bgPath = hasLangBg
+        ? (langBgMap[lang] || genericBgPath || '')
+        : (genericBgPath || '');
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const posterPayload = buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, copyConfig);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+    }
+
+    await browser.close();
+    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.png`));
+    return;
+  }
+
+  // ── 综合事件/世界杯流程 ───────────────────────────────────
+  if (templateKey === 'comprehensive' || templateKey === 'worldcup') {
+    const larkConfig = loadLarkConfig();
+    const templateLabel = templateKey === 'worldcup' ? '世界杯' : '综合事件';
+    const sheetId = templateKey === 'worldcup'
+      ? String(larkConfig.worldCupSheetId || larkConfig.comprehensiveSheetId || '').trim()
+      : String(larkConfig.comprehensiveSheetId || '').trim();
+    const sheetFieldLabel = templateKey === 'worldcup'
+      ? 'worldCupSheetId（或 comprehensiveSheetId）'
+      : 'comprehensiveSheetId';
+
+    console.log(`\n从 Lark ${templateLabel}表格拉取数据...`);
+    const accessToken = await getLarkTenantAccessToken(larkConfig);
+    const sourceData = await fetchComprehensiveEventsFromLark(larkConfig, accessToken, sheetId, sheetFieldLabel, templateKey);
+    console.log(`  ✅ 已读取${templateLabel}数据`);
+
+    const bgDir = templateConfig.bgDir || BG_DIR;
+    const rawBgFiles = scanBgFiles(bgDir);
+    const bgFiles = rawBgFiles.filter((bgFile) => {
+      const lang = path.parse(bgFile).name.toLowerCase();
+      if (templateKey === 'worldcup' && lang === 'bg') return false;
+      return true;
+    });
+    if (bgFiles.length === 0) {
+      throw new Error(`模板 ${templateKey} 没有可用语种背景图`);
+    }
     const sourceLang = larkConfig.sourceLang;
     const targetLangs = bgFiles.map(f => path.parse(f).name).filter(l => l !== sourceLang);
 
@@ -1422,7 +2026,7 @@ async function main() {
       console.log('\n回填翻译结果到 Lark 表格...');
       const writtenCount = await writeBackTranslationsToLark(
         sourceData, translationsMap,
-        accessToken, larkConfig.spreadsheetToken, larkConfig.comprehensiveSheetId
+        accessToken, larkConfig.spreadsheetToken, sheetId, larkConfig.sourceLang
       );
       console.log(`  ✅ 已回填 ${writtenCount} 种语言（第 3 行起，A 列为语言代码）`);
     }
@@ -1439,9 +2043,9 @@ async function main() {
     console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
     for (const bgFile of bgFiles) {
       const lang = path.parse(bgFile).name;
-      const bgPath = path.join(BG_DIR, bgFile);
+      const bgPath = path.join(bgDir, bgFile);
       const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
-      const posterPayload = buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig);
+      const posterPayload = buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig, templateKey);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
     }
 

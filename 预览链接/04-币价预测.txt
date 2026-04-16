@@ -1,0 +1,7 @@
+name: 币价预测
+key: coinprice
+previewUrl: http://localhost:3001/poster.coin-price.html
+script: npm run generate:coinprice
+templateFile: poster.coin-price.html
+outputDir: output/币价预测/
+outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/币价预测/

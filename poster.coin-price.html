@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>币价预测海报</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+      background: #000;
+      font-family: "MiSans", "MiSans VF", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: #fff;
+    }
+
+    #poster {
+      position: relative;
+      width: 1200px;
+      height: 1200px;
+      background: #000;
+      border: 1px solid #393939;
+      overflow: hidden;
+      --title-size: 110px;
+      --title-line-height: 1.2;
+      --title-max-width: 824px;
+      --subtitle-size: 46px;
+      --subtitle-line-height: 1.3;
+      --card-text-size: 58px;
+      --card-text-line-height: 1.2;
+    }
+
+    .brand-logo {
+      position: absolute;
+      left: 933px;
+      top: 54px;
+      width: 204px;
+      height: 71px;
+      object-fit: contain;
+      object-position: right center;
+    }
+
+    .brand-fallback {
+      position: absolute;
+      right: 64px;
+      top: 62px;
+      font-size: 48px;
+      line-height: 1;
+      color: #d8d8d8;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      display: none;
+    }
+
+    .title-wrap {
+      position: absolute;
+      left: 64px;
+      top: 53px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .title {
+      width: min(var(--title-max-width), 100%);
+      font-size: var(--title-size);
+      font-weight: 800;
+      line-height: var(--title-line-height);
+      letter-spacing: 0;
+      word-break: break-word;
+      overflow: hidden;
+    }
+
+    .subtitle {
+      width: 100%;
+      font-size: var(--subtitle-size);
+      font-weight: 400;
+      line-height: var(--subtitle-line-height);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cards {
+      position: absolute;
+      left: 63px;
+      top: 359px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      width: 1072px;
+      height: 240px;
+      border-radius: 20px;
+      border: 1px solid #5d5d5d;
+      background: linear-gradient(90deg, #161616 0%, #151515 64%, #171717 100%);
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-image-wrap {
+      width: 185px;
+      height: 189px;
+      border-radius: 20px;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: #0f0f0f;
+    }
+
+    .card-image-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .card-copy {
+      flex: 1;
+      min-width: 0;
+      font-size: var(--card-text-size);
+      line-height: var(--card-text-line-height);
+      font-weight: 700;
+      color: #fff;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      word-break: break-word;
+    }
+
+    .gauge {
+      width: 254px;
+      height: 136px;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .gauge-svg {
+      width: 254px;
+      height: 136px;
+      overflow: visible;
+    }
+
+    .gauge-track {
+      stroke: #5f666d;
+      stroke-width: 12;
+      fill: none;
+      stroke-linecap: round;
+      opacity: 0.9;
+      filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+    }
+
+    .gauge-fill {
+      stroke: #1ddce2;
+      stroke-width: 12;
+      fill: none;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 8px rgba(29, 220, 226, 0.5));
+      transition: stroke-dasharray 120ms linear;
+    }
+
+    .gauge-center {
+      position: absolute;
+      left: 0;
+      right: 20px;
+      top: 59px;
+      text-align: center;
+      font-style: normal;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .gauge-value {
+      font-size: 42px;
+      font-weight: 700;
+      letter-spacing: -0.252px;
+      color: #fff;
+      line-height: 1.1;
+    }
+
+    .gauge-label {
+      margin-top: 4px;
+      font-size: 24px;
+      font-weight: 700;
+      color: #6a7c81;
+      line-height: 1;
+    }
+
+    .footer-bar {
+      position: absolute;
+      left: 65px;
+      top: 1116px;
+      width: 1072px;
+      height: 84px;
+      border-radius: 20px 20px 0 0;
+      border: 1px solid #5d5d5d;
+      background:
+        radial-gradient(120% 130% at 50% 20%, rgba(64, 84, 126, 0.2) 0%, rgba(22, 22, 22, 0) 60%),
+        #161616;
+      filter: blur(2px);
+      z-index: 1;
+    }
+
+    .footer-text {
+      position: absolute;
+      left: 103px;
+      top: 1128px;
+      width: 993px;
+      text-align: center;
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      z-index: 2;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <img id="brand-logo" class="brand-logo" alt="BitMart" />
+    <div id="brand-fallback" class="brand-fallback">BitMart</div>
+
+    <div class="title-wrap">
+      <div id="title" class="title"></div>
+      <div id="subtitle" class="subtitle"></div>
+    </div>
+
+    <div id="cards" class="cards"></div>
+
+    <div class="footer-bar"></div>
+    <div id="footer-text" class="footer-text"></div>
+  </div>
+
+  <script>
+    const DEFAULT_BRAND_LOGO = "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19";
+
+    const PREVIEW_DATA = {
+      games: [
+        {
+          date: "2026-04-09",
+          homeTeam: { name: "凯尔特人", logo: "NBA_icon/波士顿凯尔特人.png", winRate: 58 },
+          awayTeam: { name: "尼克斯", logo: "NBA_icon/纽约尼克斯.png", winRate: 42 }
+        },
+        {
+          date: "2026-04-09",
+          homeTeam: { name: "湖人", logo: "NBA_icon/洛杉矶湖人.png", winRate: 45 },
+          awayTeam: { name: "勇士", logo: "NBA_icon/金州勇士.png", winRate: 55 }
+        },
+        {
+          date: "2026-04-10",
+          homeTeam: { name: "热火", logo: "NBA_icon/迈阿密热火.png", winRate: 50 },
+          awayTeam: { name: "公牛", logo: "NBA_icon/芝加哥公牛.png", winRate: 50 }
+        }
+      ],
+      copy: {
+        title: "每周热门趋势",
+        subtitle: "2026年世界杯冠军？",
+        footer: "查看产品：交易-预测市场",
+        outcomeLabel: "Yes",
+        titleFontSize: 110,
+        titleLineHeight: 1.2,
+        titleMaxWidth: 824,
+        subtitleFontSize: 46,
+        subtitleLineHeight: 1.3,
+        cardTextFontSize: 40,
+        cardTextLineHeight: 1.2,
+        cards: [
+          {
+            text: "特朗普会在2027年之前卸任总统吗？特朗普会在2027年之前卸任总统吗？",
+            image: "",
+            valueLabel: "Yes"
+          },
+          {
+            text: "特朗普会在2027年之前卸任总统吗？特朗普会在2027年之前卸任总统吗？",
+            image: "",
+            valueLabel: "Yes"
+          },
+          {
+            text: "特朗普会在2027年之前卸任总统吗？特朗普会在2027年之前卸任总统吗？",
+            image: "",
+            valueLabel: "Yes"
+          }
+        ]
+      }
+    };
+
+    const payload = window.GAMES_DATA || PREVIEW_DATA;
+    const games = Array.isArray(payload?.games) ? payload.games : [];
+    const copy = payload?.copy || {};
+
+    const FALLBACK_TEXT_BY_LANG = {
+      "zh-CN": (h, a) => `${h}对阵${a}，谁将胜出？`,
+      "zh-TW": (h, a) => `${h}對陣${a}，誰將勝出？`,
+      en: (h, a) => `Will ${h} defeat ${a}?`,
+      ja: (h, a) => `${h}は${a}に勝つ？`,
+      vi: (h, a) => `${h} có đánh bại ${a} không?`,
+      fr: (h, a) => `${h} va-t-il battre ${a} ?`,
+      es: (h, a) => `¿${h} vencerá a ${a}?`,
+      pt: (h, a) => `${h} vencerá ${a}?`,
+      de: (h, a) => `Wird ${h} ${a} schlagen?`,
+      default: (h, a) => `Will ${h} defeat ${a}?`
+    };
+    const FALLBACK_SUBTITLE_BY_LANG = {
+      "zh-CN": "2026年世界杯冠军？",
+      "zh-TW": "2026年世界盃冠軍？",
+      en: "Who will win the 2026 FIFA World Cup?",
+      ja: "2026年ワールドカップ優勝国は？",
+      vi: "Đội nào sẽ vô địch World Cup 2026?",
+      fr: "Qui remportera la Coupe du Monde 2026 ?",
+      es: "¿Quién ganará la Copa Mundial de 2026?",
+      pt: "Quem vencerá a Copa do Mundo de 2026?",
+      de: "Wer gewinnt die FIFA-Weltmeisterschaft 2026?"
+    };
+
+    function toRate(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return 50;
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function resolveLang() {
+      if (window.BG_PATH) {
+        const filename = String(window.BG_PATH).split('/').pop() || '';
+        const lang = filename.replace(/\.(png|jpg|jpeg|webp)$/i, '');
+        if (lang) return lang;
+      }
+      return 'zh-CN';
+    }
+
+    function resolveFallbackText(game, lang) {
+      const fn = FALLBACK_TEXT_BY_LANG[lang] || FALLBACK_TEXT_BY_LANG.default;
+      return fn(game?.homeTeam?.name || '', game?.awayTeam?.name || '');
+    }
+
+    function renderHeader(lang) {
+      const poster = document.getElementById('poster');
+      const title = String(copy.title || '').trim() || (lang === 'zh-TW' ? '每週熱門趨勢' : '每周热门趋势');
+      const subtitleFallback = FALLBACK_SUBTITLE_BY_LANG[lang] || FALLBACK_SUBTITLE_BY_LANG.en;
+      const subtitle = String(copy.subtitle || '').trim() || subtitleFallback;
+      const footer = String(copy.footer || '').trim() || (lang === 'zh-TW' ? '查看產品：交易-預測市場' : '查看产品：交易-预测市场');
+
+      poster.style.setProperty('--title-size', `${Number(copy.titleFontSize || 110)}px`);
+      poster.style.setProperty('--title-line-height', String(copy.titleLineHeight || 1.2));
+      poster.style.setProperty('--title-max-width', `${Number(copy.titleMaxWidth || 824)}px`);
+      poster.style.setProperty('--subtitle-size', `${Number(copy.subtitleFontSize || 46)}px`);
+      poster.style.setProperty('--subtitle-line-height', String(copy.subtitleLineHeight || 1.3));
+      poster.style.setProperty('--card-text-size', `${Number(copy.cardTextFontSize || 58)}px`);
+      poster.style.setProperty('--card-text-line-height', String(copy.cardTextLineHeight || 1.2));
+
+      document.getElementById('title').textContent = title;
+      document.getElementById('subtitle').textContent = subtitle;
+      document.getElementById('footer-text').textContent = footer;
+    }
+
+    function renderBrand() {
+      const logoEl = document.getElementById('brand-logo');
+      const fallbackEl = document.getElementById('brand-fallback');
+      const logoSrc = String(copy.brandLogo || DEFAULT_BRAND_LOGO).trim();
+
+      if (!logoSrc) {
+        logoEl.style.display = 'none';
+        fallbackEl.style.display = 'block';
+        return;
+      }
+
+      logoEl.src = logoSrc;
+      logoEl.onerror = () => {
+        logoEl.style.display = 'none';
+        fallbackEl.style.display = 'block';
+      };
+      logoEl.onload = () => {
+        logoEl.style.display = 'block';
+        fallbackEl.style.display = 'none';
+      };
+    }
+
+    function renderGauge(percent) {
+      const clamped = toRate(percent);
+      const gaugeLabel = 'Yes';
+      return `
+        <div class="gauge">
+          <svg class="gauge-svg" viewBox="0 0 254 136" aria-hidden="true">
+            <path class="gauge-track" d="M20 117 A97 97 0 0 1 214 117" pathLength="100"></path>
+            <path class="gauge-fill" d="M20 117 A97 97 0 0 1 214 117" pathLength="100" style="stroke-dasharray:${clamped} 100"></path>
+          </svg>
+          <div class="gauge-center">
+            <div class="gauge-value">${clamped}%</div>
+            <div class="gauge-label">${gaugeLabel}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCards(lang) {
+      const cardsData = Array.isArray(copy.cards) ? copy.cards : [];
+      const container = document.getElementById('cards');
+
+      container.innerHTML = Array.from({ length: 3 }).map((_, index) => {
+        const game = games[index] || games[0] || {
+          homeTeam: { name: '', logo: '', winRate: 50 },
+          awayTeam: { name: '', logo: '', winRate: 50 }
+        };
+
+        const cardCopy = cardsData[index] || {};
+        const image = String(cardCopy.image || game.homeTeam.logo || '').trim();
+        const text = String(cardCopy.text || '').trim() || resolveFallbackText(game, lang);
+
+        return `
+          <div class="card">
+            <div class="card-image-wrap">
+              ${image ? `<img src="${image}" alt="" />` : ''}
+            </div>
+            <div class="card-copy">${text}</div>
+            ${renderGauge(game?.homeTeam?.winRate)}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 大标题自适应：
+    //   一行放得下 → 110px
+    //   需要换行   → 固定 86px（两行内放不下再二分缩至最小 70px）
+    function fitTitle() {
+      const poster = document.getElementById('poster');
+      const titleEl = document.getElementById('title');
+      const baseFontSize = Number(copy.titleFontSize || 110);
+      const twoLineFontSize = 86;
+      const minFontSize = 70;
+      const lineHeight = Number(copy.titleLineHeight || 1.2);
+
+      const maxH = (fs) => Math.ceil(fs * lineHeight * 2) + 4;
+
+      function measure(fs) {
+        poster.style.setProperty('--title-size', `${fs}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        return titleEl.scrollHeight;
+      }
+
+      // 1. 先试原始字号，一行能放下就直接用
+      const oneLineH = Math.ceil(baseFontSize * lineHeight) + 4;
+      if (measure(baseFontSize) <= oneLineH) {
+        titleEl.style.maxHeight = `${maxH(baseFontSize)}px`;
+        return;
+      }
+
+      // 2. 换行情况：先用 86px 试两行
+      if (measure(twoLineFontSize) <= maxH(twoLineFontSize)) {
+        titleEl.style.maxHeight = `${maxH(twoLineFontSize)}px`;
+        return;
+      }
+
+      // 3. 86px 还放不下：二分查找 [minFontSize, 86)
+      let lo = minFontSize;
+      let hi = twoLineFontSize - 1;
+      let chosen = minFontSize;
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        if (measure(mid) <= maxH(mid)) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      measure(chosen);
+      titleEl.style.maxHeight = `${maxH(chosen)}px`;
+    }
+
+    function render() {
+      const lang = resolveLang();
+      renderHeader(lang);
+      fitTitle();
+      renderBrand();
+      renderCards(lang);
+    }
+
+    render();
+  </script>
+</body>
+</html>

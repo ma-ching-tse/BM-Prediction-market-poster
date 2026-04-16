@@ -1,0 +1,47 @@
+{
+  "templates": [
+    {
+      "key": "classic",
+      "name": "NBA 赛事",
+      "file": "poster.html",
+      "previewUrl": "http://localhost:3001/poster.html",
+      "outputDir": "output/NBA/",
+      "script": "npm run generate:nba"
+    },
+    {
+      "key": "comprehensive",
+      "name": "综合事件",
+      "file": "poster.comprehensive-event.html",
+      "previewUrl": "http://localhost:3001/poster.comprehensive-event.html",
+      "outputDir": "output/综合事件/",
+      "script": "npm run generate:comprehensive"
+    },
+    {
+      "key": "worldcup",
+      "name": "世界杯",
+      "file": "poster.world-cup.html",
+      "previewUrl": "http://localhost:3001/poster.world-cup.html",
+      "outputDir": "output/世界杯/",
+      "script": "npm run generate:worldcup"
+    },
+    {
+      "key": "coinprice",
+      "name": "币价预测",
+      "file": "poster.coin-price.html",
+      "previewUrl": "http://localhost:3001/poster.coin-price.html",
+      "outputDir": "output/币价预测/",
+      "script": "npm run generate:coinprice"
+    },
+    {
+      "key": "global",
+      "name": "全球预测市场",
+      "file": "poster.global-prediction-market.html",
+      "previewUrl": "http://localhost:3001/poster.global-prediction-market.html",
+      "outputDir": "output/全球预测市场/",
+      "bgDir": "backgrounds-global/",
+      "logosDir": "assets/logos/全球预测市场/",
+      "larkSheet": "ZbFFnr",
+      "script": "npm run generate:global"
+    }
+  ]
+}

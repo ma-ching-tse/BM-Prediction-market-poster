@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>足球赛事海报</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+      background: #000;
+      font-family: "MiSans", "MiSans VF", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: #fff;
+    }
+
+    #poster {
+      position: relative;
+      width: 1200px;
+      height: 1200px;
+      background: #000;
+      border: 1px solid #393939;
+      overflow: hidden;
+      --title-size: 110px;
+      --title-line-height: 1.2;
+      --title-max-width: 824px;
+      --subtitle-size: 46px;
+      --subtitle-line-height: 1.3;
+    }
+
+    /* 背景图 */
+    #bg-image {
+      position: absolute;
+      left: 0; top: 0;
+      width: 1200px;
+      height: 1200px;
+      object-fit: cover;
+      object-position: center center;
+      z-index: 0;
+    }
+
+    /* 背景遮罩 — 底部渐深 */
+    #bg-overlay {
+      position: absolute;
+      left: 0; top: 0;
+      width: 1200px;
+      height: 1200px;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.35) 0%,
+        rgba(0, 0, 0, 0.45) 25%,
+        rgba(0, 0, 0, 0.72) 55%,
+        rgba(0, 0, 0, 0.88) 80%,
+        rgba(0, 0, 0, 0.95) 100%
+      );
+      z-index: 1;
+    }
+
+
+    /* 主副标题 */
+    .title-wrap {
+      position: absolute;
+      left: 64px;
+      top: 53px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      z-index: 10;
+    }
+
+    .title {
+      width: min(var(--title-max-width), 100%);
+      font-size: var(--title-size);
+      font-weight: 800;
+      line-height: var(--title-line-height);
+      letter-spacing: 0;
+      word-break: break-word;
+      overflow: hidden;
+    }
+
+    .subtitle {
+      width: 100%;
+      font-size: var(--subtitle-size);
+      font-weight: 400;
+      line-height: var(--subtitle-line-height);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    /* 赛事卡片容器 */
+    .cards {
+      position: absolute;
+      left: 63px;
+      top: 360px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 10;
+    }
+
+    /* 单张卡片 */
+    .card {
+      width: 1072px;
+      height: 230px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(90deg, rgba(18,18,18,0.92) 0%, rgba(16,16,16,0.88) 100%);
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 20px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 卡片光泽边框效果 */
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    /* 队徽 */
+    .team-logo {
+      width: 140px;
+      height: 140px;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .team-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    /* 卡片中间信息区 */
+    .card-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 16px;
+      padding: 0 20px;
+    }
+
+    /* 队名行 */
+    .match-teams {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* 主队一侧：日期 + 队名纵向堆叠 */
+    .team-left {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      max-width: 220px;
+    }
+
+    .match-date {
+      font-size: 22px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.5);
+      line-height: 1;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    .team-name {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.15;
+      color: #fff;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      word-break: break-word;
+    }
+
+    /* 客队名：右对齐 */
+    .team-name-away {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.15;
+      color: #fff;
+      max-width: 220px;
+      text-align: right;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      word-break: break-word;
+    }
+
+    .vs-divider {
+      font-size: 28px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.3);
+      flex-shrink: 0;
+    }
+
+    /* 胜平负进度条 */
+    .wdl-bar {
+      width: 100%;
+      height: 44px;
+      border-radius: 22px;
+      overflow: hidden;
+      display: flex;
+      position: relative;
+      background: rgba(255,255,255,0.06);
+    }
+
+    .wdl-win {
+      background: linear-gradient(90deg, #1ddce2 0%, #17b8be 100%);
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      transition: width 0s;
+      border-radius: 22px 0 0 22px;
+    }
+
+    .wdl-draw {
+      background: linear-gradient(90deg, #7a8691 0%, #6b7882 100%);
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+    }
+
+    .wdl-loss {
+      background: linear-gradient(90deg, #2bdb7e 0%, #22c46b 100%);
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      min-width: 44px;
+      border-radius: 0 22px 22px 0;
+    }
+
+    .wdl-label {
+      font-size: 22px;
+      font-weight: 700;
+      color: rgba(0,0,0,0.75);
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    /* Footer */
+    .footer-bar {
+      position: absolute;
+      left: 65px;
+      top: 1116px;
+      width: 1072px;
+      height: 84px;
+      border-radius: 20px 20px 0 0;
+      border: 1px solid #5d5d5d;
+      background:
+        radial-gradient(120% 130% at 50% 20%, rgba(64, 84, 126, 0.2) 0%, rgba(22, 22, 22, 0) 60%),
+        #161616;
+      filter: blur(2px);
+      z-index: 10;
+    }
+
+    .footer-text {
+      position: absolute;
+      left: 103px;
+      top: 1128px;
+      width: 993px;
+      text-align: center;
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      z-index: 11;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <img id="bg-image" alt="" />
+    <div id="bg-overlay"></div>
+
+
+    <div class="title-wrap">
+      <div id="title" class="title"></div>
+      <div id="subtitle" class="subtitle"></div>
+    </div>
+
+    <div id="cards" class="cards"></div>
+
+    <div class="footer-bar"></div>
+    <div id="footer-text" class="footer-text"></div>
+  </div>
+
+  <script>
+    const PREVIEW_DATA = {
+      games: [
+        {
+          matchDate: "2026-04-15",
+          homeTeam: { name: "拜仁", logo: "assets/logos/足球赛事/五大联赛/拜仁慕尼黑.png", winRate: 63 },
+          awayTeam: { name: "皇马", logo: "assets/logos/足球赛事/五大联赛/皇家马德里.png", winRate: 20 },
+          drawRate: 17
+        },
+        {
+          matchDate: "2026-04-15",
+          homeTeam: { name: "阿森纳", logo: "assets/logos/足球赛事/欧冠/阿森纳.png", winRate: 65 },
+          awayTeam: { name: "竞技里斯本", logo: "assets/logos/足球赛事/欧冠/里斯本竞技.png", winRate: 13 },
+          drawRate: 22
+        },
+        {
+          matchDate: "2026-04-16",
+          homeTeam: { name: "巴萨", logo: "assets/logos/足球赛事/五大联赛/巴塞罗那.png", winRate: 55 },
+          awayTeam: { name: "马竞", logo: "assets/logos/足球赛事/五大联赛/马德里竞技.png", winRate: 25 },
+          drawRate: 20
+        }
+      ],
+      copy: {
+        title: "足球赛事",
+        subtitle: "预测比赛，赢取奖励",
+        footer: "查看产品：交易 - 预测市场",
+        titleFontSize: 110,
+        titleLineHeight: 1.2,
+        titleMaxWidth: 824,
+        subtitleFontSize: 46,
+        subtitleLineHeight: 1.3
+      }
+    };
+
+    const payload = window.GAMES_DATA || PREVIEW_DATA;
+    const games = Array.isArray(payload?.games) ? payload.games : [];
+    const copy = payload?.copy || {};
+
+    // 将 YYYY-MM-DD 统一格式化为 YYYY/MM/DD
+    function formatMatchDate(raw) {
+      if (!raw) return '';
+      const s = String(raw).trim();
+      const m = s.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+      if (!m) return s;
+      const year = m[1];
+      const month = String(parseInt(m[2], 10)).padStart(2, '0');
+      const day = String(parseInt(m[3], 10)).padStart(2, '0');
+      return `${year}/${month}/${day}`;
+    }
+
+    function resolveLang() {
+      if (window.BG_PATH) {
+        const filename = String(window.BG_PATH).split('/').pop() || '';
+        const lang = filename.replace(/\.(png|jpg|jpeg|webp)$/i, '');
+        if (lang) return lang;
+      }
+      return 'zh-CN';
+    }
+
+    function toRate(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return 0;
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function renderBg() {
+      const bgEl = document.getElementById('bg-image');
+      const bgSrc = String(window.BG_PATH || '').trim() ||
+                    'backgrounds- football/zh-CN.png';
+      if (bgSrc) {
+        bgEl.src = bgSrc;
+        bgEl.style.display = 'block';
+      } else {
+        bgEl.style.display = 'none';
+      }
+    }
+
+    function renderHeader() {
+      const poster = document.getElementById('poster');
+      const lang = resolveLang();
+
+      const title = String(copy.title || '').trim() ||
+        (lang === 'zh-TW' ? '足球賽事' : '足球赛事');
+      const subtitle = String(copy.subtitle || '').trim() ||
+        (lang === 'zh-TW' ? '預測比賽，贏取獎勵' : '预测比赛，赢取奖励');
+      const footer = String(copy.footer || '').trim() ||
+        (lang === 'zh-TW' ? '查看產品：交易 - 預測市場' : '查看产品：交易 - 预测市场');
+
+      poster.style.setProperty('--title-size', `${Number(copy.titleFontSize || 110)}px`);
+      poster.style.setProperty('--title-line-height', String(copy.titleLineHeight || 1.2));
+      poster.style.setProperty('--title-max-width', `${Number(copy.titleMaxWidth || 824)}px`);
+      poster.style.setProperty('--subtitle-size', `${Number(copy.subtitleFontSize || 46)}px`);
+      poster.style.setProperty('--subtitle-line-height', String(copy.subtitleLineHeight || 1.3));
+
+      document.getElementById('title').textContent = title;
+      document.getElementById('subtitle').textContent = subtitle;
+      document.getElementById('footer-text').textContent = footer;
+    }
+
+    // 大标题自适应（与综合事件模版逻辑一致）
+    function fitTitle() {
+      const poster = document.getElementById('poster');
+      const titleEl = document.getElementById('title');
+      const baseFontSize = Number(copy.titleFontSize || 110);
+      const twoLineFontSize = 86;
+      const minFontSize = 70;
+      const lineHeight = Number(copy.titleLineHeight || 1.2);
+      const maxH = (fs) => Math.ceil(fs * lineHeight * 2) + 4;
+
+      function measure(fs) {
+        poster.style.setProperty('--title-size', `${fs}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        return titleEl.scrollHeight;
+      }
+
+      const oneLineH = Math.ceil(baseFontSize * lineHeight) + 4;
+      if (measure(baseFontSize) <= oneLineH) {
+        titleEl.style.maxHeight = `${maxH(baseFontSize)}px`;
+        return;
+      }
+      if (measure(twoLineFontSize) <= maxH(twoLineFontSize)) {
+        titleEl.style.maxHeight = `${maxH(twoLineFontSize)}px`;
+        return;
+      }
+      let lo = minFontSize, hi = twoLineFontSize - 1, chosen = minFontSize;
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        if (measure(mid) <= maxH(mid)) { chosen = mid; lo = mid + 1; }
+        else { hi = mid - 1; }
+      }
+      measure(chosen);
+      titleEl.style.maxHeight = `${maxH(chosen)}px`;
+    }
+
+    function renderWdlBar(winRate, drawRate, lossRate) {
+      // 归一化，确保三者之和 = 100
+      const total = winRate + drawRate + lossRate;
+      const scale = total > 0 ? 100 / total : 1;
+      const w = Math.round(winRate * scale);
+      const d = Math.round(drawRate * scale);
+      const l = 100 - w - d;
+
+      return `
+        <div class="wdl-bar">
+          <div class="wdl-win" style="width:${w}%">
+            <span class="wdl-label">${w}%</span>
+          </div>
+          <div class="wdl-draw" style="width:${d}%">
+            <span class="wdl-label">${d}%</span>
+          </div>
+          <div class="wdl-loss" style="width:${l}%; flex:unset">
+            <span class="wdl-label">${l}%</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCards() {
+      const container = document.getElementById('cards');
+      const lang = resolveLang();
+      const count = Math.min(games.length, 3);
+
+      container.innerHTML = Array.from({ length: count }).map((_, i) => {
+        const game = games[i];
+        const homeWin = toRate(game?.homeTeam?.winRate);
+        const awayWin = toRate(game?.awayTeam?.winRate);
+        const draw = toRate(game?.drawRate);
+        const homeName = String(game?.homeTeam?.name || '').trim();
+        const awayName = String(game?.awayTeam?.name || '').trim();
+        const homeLogo = String(game?.homeTeam?.logo || '').trim();
+        const awayLogo = String(game?.awayTeam?.logo || '').trim();
+        const matchDate = formatMatchDate(String(game?.matchDate || '').trim());
+
+        return `
+          <div class="card">
+            <div class="team-logo">
+              ${homeLogo ? `<img src="${homeLogo}" alt="${homeName}" />` : ''}
+            </div>
+
+            <div class="card-info">
+              <div class="match-teams">
+                <div class="team-left">
+                  ${matchDate ? `<div class="match-date">${matchDate}</div>` : ''}
+                  <div class="team-name">${homeName}</div>
+                </div>
+
+                <div class="team-name-away">${awayName}</div>
+              </div>
+              ${renderWdlBar(homeWin, draw, awayWin)}
+            </div>
+
+            <div class="team-logo">
+              ${awayLogo ? `<img src="${awayLogo}" alt="${awayName}" />` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function render() {
+      renderBg();
+      renderHeader();
+      fitTitle();
+      renderCards();
+    }
+
+    render();
+  </script>
+</body>
+</html>

@@ -5,7 +5,13 @@
   "main": "generate.js",
   "scripts": {
     "generate": "node generate.js",
-    "generate:comprehensive": "node generate.js --template comprehensive"
+    "generate:nba": "node generate.js --template classic",
+    "generate:comprehensive": "node generate.js --template comprehensive",
+    "generate:worldcup": "node generate.js --template worldcup",
+    "generate:global": "node generate.js --template global",
+    "generate:coinprice": "node generate.js --template coinprice",
+    "generate:football": "node generate.js --template football",
+    "generate:f1": "node generate.js --template f1"
   },
   "dependencies": {
     "puppeteer": "^24.40.0",

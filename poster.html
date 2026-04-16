@@ -63,6 +63,23 @@
       text-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
     }
 
+    .poster-footer {
+      position: absolute;
+      left: 103px;
+      top: 1129px;
+      width: 993px;
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      z-index: 2;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      font-family: "MiSans VF", "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
     /* ── 比赛卡片容器 ── */
     .games-container {
       position: absolute;
@@ -236,6 +253,7 @@
       <div class="poster-title" id="poster-title">NBA热门比赛</div>
       <div class="poster-subtitle" id="poster-subtitle">预测比赛，赢取奖励</div>
     </div>
+    <div class="poster-footer" id="poster-footer">立即加入：预测市场 – 体育 – NBA</div>
 
     <div class="games-container" id="games-container">
       <!-- 由 JS 动态渲染 -->
@@ -248,6 +266,7 @@
       copy: {
         title: "NBA热门比赛",
         subtitle: "预测比赛，赢取奖励",
+        footer: "立即加入：预测市场 – 体育 – NBA",
         titleFontSize: 110,
         titleLineHeight: 1.2,
         titleMaxWidth: 860,
@@ -275,19 +294,42 @@
 
     const data = window.GAMES_DATA || PREVIEW_DATA;
 
+    const FOOTER_FALLBACK_BY_LANG = {
+      "zh-CN": "立即加入：预测市场 – 体育 – NBA",
+      "zh-TW": "立即加入：預測市場 – 體育 – NBA",
+      en: "Join Now: Prediction Market – Sports – NBA",
+      ja: "今すぐ参加：予測市場 – スポーツ – NBA",
+      es: "Únete Ahora: Mercado de Predicciones – Deportes – NBA",
+      pt: "Entre Agora: Mercado de Previsões – Esportes – NBA",
+      de: "Jetzt teilnehmen: Prognosemarkt – Sport – NBA",
+      fr: "Rejoignez : Marché des Pronostics – Sports – NBA",
+      vi: "Tham gia ngay: Thị trường dự đoán – Thể thao – NBA",
+      default: "Join Now: Prediction Market – Sports – NBA"
+    };
+
     // 如果由 generate.js 注入了背景图路径，则替换
     if (window.BG_PATH) {
       document.getElementById('bg-image').src = window.BG_PATH;
     }
 
+    function resolveLang() {
+      if (!window.BG_PATH) return 'zh-CN';
+      const name = String(window.BG_PATH).split('/').pop() || '';
+      const lang = name.replace(/\.(png|jpg|jpeg|webp)$/i, '');
+      return lang || 'zh-CN';
+    }
+
     function applyCopy(copy) {
       const titleEl = document.getElementById('poster-title');
       const subtitleEl = document.getElementById('poster-subtitle');
+      const footerEl = document.getElementById('poster-footer');
       const root = document.getElementById('poster');
-      if (!copy || !titleEl || !subtitleEl || !root) return;
+      if (!copy || !titleEl || !subtitleEl || !footerEl || !root) return;
+      const lang = resolveLang();
 
       titleEl.textContent = copy.title || '';
       subtitleEl.textContent = copy.subtitle || '';
+      footerEl.textContent = copy.footer || FOOTER_FALLBACK_BY_LANG[lang] || FOOTER_FALLBACK_BY_LANG.default;
 
       root.style.setProperty('--poster-title-size', `${Number(copy.titleFontSize || 86)}px`);
       root.style.setProperty('--poster-title-line-height', String(copy.titleLineHeight || 1.15));

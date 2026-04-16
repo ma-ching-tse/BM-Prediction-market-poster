@@ -1,0 +1,7 @@
+name: 世界杯
+key: worldcup
+previewUrl: http://localhost:3001/poster.world-cup.html
+script: npm run generate:worldcup
+templateFile: poster.world-cup.html
+outputDir: output/世界杯/
+outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/世界杯/

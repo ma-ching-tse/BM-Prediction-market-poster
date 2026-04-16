@@ -381,5 +381,119 @@
         }
       ]
     }
+  },
+  "f1": {
+    "default": {
+      "title": "F1车队总冠军？",
+      "subtitle": "预测比赛，赢取奖励",
+      "footer": "查看产品：交易-预测市场",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 52,
+      "headerImage": "assets/f1_car.png",
+      "brandLogo": "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19"
+    },
+    "zh-CN": {
+      "title": "F1车队总冠军？",
+      "subtitle": "预测比赛，赢取奖励",
+      "footer": "查看产品：交易-预测市场",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 52
+    },
+    "zh-TW": {
+      "title": "F1車隊總冠軍？",
+      "subtitle": "預測比賽，贏取獎勵",
+      "footer": "查看產品：交易-預測市場",
+      "titleFontSize": 100,
+      "titleLineHeight": 1.18,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 52
+    },
+    "en": {
+      "title": "F1 Team Champion?",
+      "subtitle": "Predict & Win Rewards",
+      "footer": "View Product: Trade - Prediction Market",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.15,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 42,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 48
+    },
+    "ja": {
+      "title": "F1チームチャンピオン？",
+      "subtitle": "試合を予測して、報酬を獲得しよう",
+      "footer": "製品を見る：取引 - 予測市場",
+      "titleFontSize": 94,
+      "titleLineHeight": 1.18,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 40,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 48
+    },
+    "vi": {
+      "title": "Vô địch đội F1?",
+      "subtitle": "Dự đoán kết quả, nhận thưởng hấp dẫn",
+      "footer": "Xem sản phẩm: Giao dịch - Thị trường dự đoán",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 36,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 48
+    },
+    "es": {
+      "title": "¿Campeón del equipo F1?",
+      "subtitle": "Predice y gana recompensas",
+      "footer": "Ver producto: Trading - Mercado de predicción",
+      "titleFontSize": 76,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 46
+    },
+    "pt": {
+      "title": "Campeão do Time F1?",
+      "subtitle": "Preveja e ganhe recompensas",
+      "footer": "Ver produto: Trading - Mercado de previsão",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 46
+    },
+    "de": {
+      "title": "F1-Team-Champion?",
+      "subtitle": "Vorhersagen und Belohnungen gewinnen",
+      "footer": "Produkt ansehen: Trading - Prognosemarkt",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 46
+    },
+    "fr": {
+      "title": "Champion de l'équipe F1?",
+      "subtitle": "Prédisez et gagnez des récompenses",
+      "footer": "Voir le produit : Trading - Marché prédictif",
+      "titleFontSize": 78,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 36,
+      "subtitleLineHeight": 1.3,
+      "teamNameFontSize": 46
+    }
   }
 }

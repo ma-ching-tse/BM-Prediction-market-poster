@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>全球预测市场海报</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+      background: #000;
+      font-family: "MiSans", "MiSans VF", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: #fff;
+    }
+
+    #poster {
+      position: relative;
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+    }
+
+    /* ── 背景图：铺满整张海报 ────────────────────────────── */
+    .bg-image {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1200px;
+      height: 1200px;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* ── 卡片容器 (x=52, y=734, 1096×346) ────────────── */
+    .cards {
+      position: absolute;
+      left: 52px;
+      top: 734px;
+      width: 1096px;
+      height: 346px;
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+    }
+
+    /* ── 单张卡片 (360×346) ──────────────────────────── */
+    .card {
+      width: 360px;
+      height: 346px;
+      flex-shrink: 0;
+      border: 1px solid #5d5d5d;
+      border-radius: 20px;
+      background:
+        radial-gradient(ellipse 300px 260px at 83% 39%, rgba(1, 224, 224, 0.08) 0%, transparent 100%),
+        #161616;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 32px 24px;
+      overflow: hidden;
+    }
+
+    .card-top {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .card-header-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .card-icon {
+      width: 68px;
+      height: 68px;
+      flex-shrink: 0;
+      object-fit: contain;
+    }
+
+    .card-title {
+      flex: 1;
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1.15;
+      color: #fff;
+      min-width: 0;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+
+    .card-divider {
+      width: 100%;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.15);
+      flex-shrink: 0;
+    }
+
+    .card-bottom {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      align-items: center;
+      text-align: center;
+      width: 100%;
+    }
+
+    .card-stat {
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      color: #01e0e0;
+      width: 100%;
+    }
+
+    .card-desc {
+      font-size: 34px;
+      font-weight: 500;
+      line-height: 1.1;
+      color: rgba(255, 255, 255, 0.6);
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <!-- 背景图（含标题/副标题/footer，由各语言图片提供） -->
+    <img id="bg-image" class="bg-image" alt="" />
+
+    <!-- 三张卡片（动态渲染） -->
+    <div id="cards" class="cards"></div>
+  </div>
+
+  <script>
+    const PREVIEW_DATA = {
+      bgImagePath: '',
+      cards: [
+        { icon: 'assets/logos/全球预测市场/1.png', title: '加密风云', stat: '500+', desc: '热门币种与事件' },
+        { icon: 'assets/logos/全球预测市场/2.png', title: '体育热点', stat: '200+', desc: '全球赛事预测'   },
+        { icon: 'assets/logos/全球预测市场/3.png', title: '政治风向', stat: '100+', desc: '热门政治话题'   }
+      ]
+    };
+
+    const payload = window.GAMES_DATA || PREVIEW_DATA;
+    const cards   = Array.isArray(payload?.cards) ? payload.cards : [];
+    const bgPath  = String(payload?.bgImagePath || window.BG_PATH || '').trim();
+
+    // ── 背景图 ───────────────────────────────────────────
+    const bgImg = document.getElementById('bg-image');
+    if (bgPath) {
+      bgImg.src = bgPath;
+    } else {
+      bgImg.style.display = 'none';
+    }
+
+    // ── 渲染三张卡片 ─────────────────────────────────────
+    const container = document.getElementById('cards');
+    container.innerHTML = Array.from({ length: 3 }).map((_, i) => {
+      const card  = cards[i] || {};
+      const icon  = String(card.icon  || '').trim();
+      const title = String(card.title || '').trim();
+      const stat  = String(card.stat  || '').trim();
+      const desc  = String(card.desc  || '').trim();
+
+      return `
+        <div class="card">
+          <div class="card-top">
+            <div class="card-header-row">
+              ${icon ? `<img class="card-icon" src="${icon}" alt="" />` : ''}
+              <div class="card-title">${title}</div>
+            </div>
+            <div class="card-divider"></div>
+          </div>
+          <div class="card-bottom">
+            <div class="card-stat">${stat}</div>
+            <div class="card-desc">${desc}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // ── 卡片文字字号自适应 ────────────────────────────────
+    // 检测元素在指定字号下，禁用折行时是否水平溢出
+    function checkHOverflow(el) {
+      const prev = el.style.whiteSpace;
+      el.style.whiteSpace = 'nowrap';
+      void el.offsetHeight;
+      const overflows = el.scrollWidth > el.clientWidth;
+      el.style.whiteSpace = prev;
+      void el.offsetHeight;
+      return overflows;
+    }
+
+    function fitCardText(selector, maxFs, minFs, lineH, twoLineMaxFs) {
+      const wrapMax = twoLineMaxFs ?? maxFs;
+      document.querySelectorAll(selector).forEach(el => {
+        el.style.fontSize = `${maxFs}px`;
+        void el.offsetHeight;
+
+        const oneLineH  = Math.ceil(maxFs * lineH) + 4;
+        const overflowsV = el.scrollHeight > oneLineH;
+        const overflowsH = checkHOverflow(el); // 用禁折行方式检测真实单词宽度
+        if (!overflowsV && !overflowsH) return; // 完全放得下，不动
+
+        // 二分找最大字号：单词不水平溢出 且 最多两行
+        let lo = minFs, hi = overflowsH ? maxFs : wrapMax, chosen = minFs;
+        while (lo <= hi) {
+          const mid = Math.round((lo + hi) / 2);
+          el.style.fontSize = `${mid}px`;
+          void el.offsetHeight;
+          const midOverflowH = checkHOverflow(el);
+          const fits2Lines   = el.scrollHeight <= Math.ceil(mid * lineH * 2) + 4;
+          if (!midOverflowH && fits2Lines) {
+            chosen = mid; lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        el.style.fontSize = `${chosen}px`;
+      });
+    }
+
+    fitCardText('.card-title', 48, 24, 1.15, 38);
+    fitCardText('.card-desc',  34, 28, 1.10);
+  </script>
+</body>
+</html>
