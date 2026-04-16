@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["http-server", ".", "-p", "3001", "--cors", "-c-1"],
       "port": 3001
+    },
+    {
+      "name": "预览代理服务器（含 Polymarket 代理）",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["proxy.js"],
+      "port": 3002
     }
   ]
 }

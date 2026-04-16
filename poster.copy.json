@@ -495,5 +495,119 @@
       "subtitleLineHeight": 1.3,
       "teamNameFontSize": 46
     }
+  },
+  "f1driver": {
+    "default": {
+      "title": "F1总冠军车手？",
+      "subtitle": "谁是你心中的冠军，做出预测吧",
+      "footer": "查看产品：交易-预测市场",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 52,
+      "headerImage": "assets/f1_car.png",
+      "brandLogo": "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19"
+    },
+    "zh-CN": {
+      "title": "F1总冠军车手？",
+      "subtitle": "谁是你心中的冠军，做出预测吧",
+      "footer": "查看产品：交易-预测市场",
+      "titleFontSize": 110,
+      "titleLineHeight": 1.2,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 52
+    },
+    "zh-TW": {
+      "title": "F1總冠軍車手？",
+      "subtitle": "誰是你心中的冠軍，做出預測吧",
+      "footer": "查看產品：交易-預測市場",
+      "titleFontSize": 100,
+      "titleLineHeight": 1.18,
+      "titleMaxWidth": 824,
+      "subtitleFontSize": 46,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 52
+    },
+    "en": {
+      "title": "F1 Driver Champion?",
+      "subtitle": "Make your prediction now",
+      "footer": "View Product: Trade - Prediction Market",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.15,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 42,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 48
+    },
+    "ja": {
+      "title": "F1ドライバーチャンピオン？",
+      "subtitle": "あなたの予測を今すぐ",
+      "footer": "製品を見る：取引 - 予測市場",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.18,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 40,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 46
+    },
+    "vi": {
+      "title": "Vô địch tay đua F1?",
+      "subtitle": "Dự đoán ngay bây giờ",
+      "footer": "Xem sản phẩm: Giao dịch - Thị trường dự đoán",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 36,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 46
+    },
+    "es": {
+      "title": "¿Campeón piloto de F1?",
+      "subtitle": "Haz tu predicción ahora",
+      "footer": "Ver producto: Trading - Mercado de predicción",
+      "titleFontSize": 76,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 44
+    },
+    "pt": {
+      "title": "Campeão piloto de F1?",
+      "subtitle": "Faça sua previsão agora",
+      "footer": "Ver produto: Trading - Mercado de previsão",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 44
+    },
+    "de": {
+      "title": "F1-Fahrer-Champion?",
+      "subtitle": "Mach jetzt deine Prognose",
+      "footer": "Produkt ansehen: Trading - Prognosemarkt",
+      "titleFontSize": 86,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 38,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 44
+    },
+    "fr": {
+      "title": "Champion pilote F1?",
+      "subtitle": "Faites votre prédiction maintenant",
+      "footer": "Voir le produit : Trading - Marché prédictif",
+      "titleFontSize": 80,
+      "titleLineHeight": 1.14,
+      "titleMaxWidth": 860,
+      "subtitleFontSize": 36,
+      "subtitleLineHeight": 1.3,
+      "driverNameFontSize": 44
+    }
   }
 }

@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>F1车手海报</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 1200px;
+      overflow: hidden;
+      background: #000;
+      font-family: "MiSans", "MiSans VF", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: #fff;
+    }
+
+    #poster {
+      position: relative;
+      width: 1200px;
+      height: 1200px;
+      background: #000;
+      border: 1px solid #393939;
+      overflow: hidden;
+      --title-size: 110px;
+      --title-line-height: 1.2;
+      --title-max-width: 824px;
+      --subtitle-size: 46px;
+      --subtitle-line-height: 1.3;
+      --driver-name-size: 52px;
+    }
+
+    /* ── 全局背景图（window.BG_PATH 注入） ── */
+    .bg-image {
+      position: absolute;
+      left: -1px;
+      top: -1px;
+      width: 1201px;
+      height: 1200px;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    /* ── F1赛车头图（叠在背景上方顶部） ── */
+    .header-image {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1200px;
+      height: 390px;
+      object-fit: cover;
+      object-position: center top;
+      z-index: 1;
+      display: none;
+    }
+
+    /* 头图底部渐变遮罩 */
+    .header-overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1200px;
+      height: 420px;
+      background: linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0.0) 0%,
+        rgba(0, 0, 0, 0.1) 40%,
+        rgba(0, 0, 0, 0.55) 70%,
+        rgba(0, 0, 0, 1) 100%
+      );
+      z-index: 2;
+    }
+
+    /* ── BitMart Logo ── */
+    .brand-logo {
+      position: absolute;
+      left: 933px;
+      top: 54px;
+      width: 204px;
+      height: 71px;
+      object-fit: contain;
+      object-position: right center;
+      z-index: 4;
+    }
+
+    .brand-fallback {
+      position: absolute;
+      right: 64px;
+      top: 62px;
+      font-size: 48px;
+      line-height: 1;
+      color: #d8d8d8;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      display: none;
+      z-index: 4;
+    }
+
+    /* ── 标题区 ── */
+    .title-wrap {
+      position: absolute;
+      left: 64px;
+      top: 53px;
+      width: 840px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      z-index: 4;
+    }
+
+    .title {
+      width: min(var(--title-max-width), 100%);
+      font-size: var(--title-size);
+      font-weight: 800;
+      line-height: var(--title-line-height);
+      letter-spacing: 0;
+      word-break: break-word;
+      overflow: hidden;
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    }
+
+    .subtitle {
+      font-size: var(--subtitle-size);
+      font-weight: 400;
+      line-height: var(--subtitle-line-height);
+      color: rgba(255, 255, 255, 0.9);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    }
+
+    /* ── 车手卡片容器 ── */
+    .cards {
+      position: absolute;
+      left: 63px;
+      top: 359px;
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 4;
+    }
+
+    /* ── 单张车手卡片（162px 高，匹配 Figma 设计） ── */
+    .card {
+      width: 1072px;
+      height: 162px;
+      border-radius: 16px;
+      border: 1px solid #5d5d5d;
+      background: linear-gradient(90deg, #161616 0%, #151515 64%, #171717 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 卡片右上角青色辐射渐变 */
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 320px 162px at 85% 20%, rgba(1, 224, 224, 0.1) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* ── 左侧车手照片区（483×162） ── */
+    .card-bg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 483px;
+      height: 162px;
+      overflow: hidden;
+      /* 青色渐变背景，匹配 Figma 设计 */
+      background: linear-gradient(90deg, #0bbfbd 0%, #09a09e 40%, rgba(22, 22, 22, 0) 80%);
+      z-index: 1;
+    }
+
+    /* 车手肖像图：铺满整个 card-bg 区域（图片比例与区域完全吻合，无裁切） */
+    .card-bg img {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: left center;
+    }
+
+    /* 右侧渐变遮罩，衔接深色背景 */
+    .card-bg-gradient {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 483px;
+      height: 162px;
+      background: linear-gradient(265.07deg, #161616 2.1%, rgba(22, 22, 22, 0) 98.5%);
+    }
+
+    /* ── 右侧内容区（车手名称 + 仪表盘） ── */
+    .card-right {
+      position: absolute;
+      left: 263px;
+      top: 0;
+      right: 0;
+      height: 162px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 36px 0 24px;
+      z-index: 3;
+    }
+
+    /* ── 车手名称 ── */
+    .driver-name {
+      flex: 1;
+      min-width: 0;
+      font-size: var(--driver-name-size);
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.15;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: -0.01em;
+    }
+
+    /* ── 仪表盘（半圆进度，缩小版适配162px卡片） ── */
+    .gauge {
+      width: 200px;
+      height: 108px;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .gauge-svg {
+      width: 200px;
+      height: 108px;
+      overflow: visible;
+    }
+
+    .gauge-track {
+      stroke: #5f666d;
+      stroke-width: 10;
+      fill: none;
+      stroke-linecap: round;
+      opacity: 0.9;
+      filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+    }
+
+    .gauge-fill {
+      stroke: #1ddce2;
+      stroke-width: 10;
+      fill: none;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 8px rgba(29, 220, 226, 0.5));
+    }
+
+    .gauge-center {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 56px;
+      text-align: center;
+      font-style: normal;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .gauge-value {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: #fff;
+      line-height: 1.1;
+    }
+
+    .footer-text {
+      position: absolute;
+      left: 103px;
+      top: 1128px;
+      width: 993px;
+      text-align: center;
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      z-index: 5;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <img id="bg-image" class="bg-image" alt="" />
+    <img id="header-image" class="header-image" alt="" />
+    <div class="header-overlay"></div>
+
+    <img id="brand-logo" class="brand-logo" alt="BitMart" />
+    <div id="brand-fallback" class="brand-fallback">BitMart</div>
+
+    <div class="title-wrap">
+      <div id="title" class="title"></div>
+      <div id="subtitle" class="subtitle"></div>
+    </div>
+
+    <div id="cards" class="cards"></div>
+
+    <div id="footer-text" class="footer-text"></div>
+  </div>
+
+  <script>
+    const DEFAULT_BRAND_LOGO = "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19";
+    // 预览时走本地代理（避免 CORS），generate.js 注入 GAMES_DATA 时不会走这里
+    const POLYMARKET_BASE = window.POLYMARKET_BASE || (
+      window.location.hostname === 'localhost' ? `${window.location.protocol}//${window.location.hostname}:3002/api/polymarket` : 'https://gamma-api.polymarket.com'
+    );
+
+    // 默认 Polymarket slug（可通过 window.POLYMARKET_SLUG 覆盖）
+    const DEFAULT_POLYMARKET_SLUG = window.POLYMARKET_SLUG || '2026-f1-drivers-champion';
+
+    // 本地车手图片映射
+    const DRIVER_PHOTO_MAP = {
+      'georgerussell':   'assets/logos/F1%20Driver/George%20Russell.png',
+      'kimiantonelli':   'assets/logos/F1%20Driver/Kimi%20Antonelli.png',
+      'charlesleclerc':  'assets/logos/F1%20Driver/Charles%20Leclerc.png',
+      'maxverstappen':   'assets/logos/F1%20Driver/Max%20Verstappen.png',
+    };
+
+    function normalizeName(name) {
+      return String(name || '').toLowerCase().replace(/[^a-z]/g, '');
+    }
+
+    function findDriverPhoto(name) {
+      return DRIVER_PHOTO_MAP[normalizeName(name)] || '';
+    }
+
+    async function fetchPolymarketDrivers(slug) {
+      // 先试单个 market（分站赛多选）
+      let res = await fetch(`${POLYMARKET_BASE}/markets/slug/${slug}`);
+      if (res.ok) {
+        const market = await res.json();
+        const outcomes = JSON.parse(market.outcomes || '[]');
+        const prices = JSON.parse(market.outcomePrices || '[]');
+        return outcomes
+          .map((name, i) => ({ name, photo: findDriverPhoto(name), percent: Math.round(Number(prices[i]) * 100) }))
+          .sort((a, b) => b.percent - a.percent).slice(0, 4);
+      }
+
+      // 再试 event（总冠军 Yes/No 或多选）
+      res = await fetch(`${POLYMARKET_BASE}/events/slug/${slug}`);
+      if (!res.ok) throw new Error(`Polymarket HTTP ${res.status}`);
+      const event = await res.json();
+      const markets = Array.isArray(event.markets) ? event.markets : [];
+      if (!markets.length) throw new Error('No markets in event');
+
+      const firstOutcomes = JSON.parse(markets[0]?.outcomes || '[]').map(s => s.toLowerCase());
+      const isYesNo = firstOutcomes.includes('yes') && firstOutcomes.includes('no');
+
+      if (isYesNo) {
+        return markets.map(m => {
+          const outcomes = JSON.parse(m.outcomes || '[]');
+          const prices   = JSON.parse(m.outcomePrices || '[]');
+          const yesIdx   = outcomes.findIndex(o => o.toLowerCase() === 'yes');
+          if (yesIdx === -1) return null;
+          const rawName = (m.question?.match(/^Will\s+(.+?)\s+(?:win|be)\b/i)?.[1])
+            || m.slug?.replace(/^will-/, '').replace(/-(?:win|be).*$/, '').replace(/-/g, ' ');
+          return { name: rawName, photo: findDriverPhoto(rawName), percent: Math.round(Number(prices[yesIdx]) * 100) };
+        }).filter(Boolean).sort((a, b) => b.percent - a.percent).slice(0, 4);
+      }
+
+      // 多选 market
+      const main = markets.reduce((best, m) =>
+        JSON.parse(m.outcomes || '[]').length > JSON.parse(best.outcomes || '[]').length ? m : best
+      );
+      const outcomes = JSON.parse(main.outcomes || '[]');
+      const prices   = JSON.parse(main.outcomePrices || '[]');
+      return outcomes
+        .map((name, i) => ({ name, photo: findDriverPhoto(name), percent: Math.round(Number(prices[i]) * 100) }))
+        .sort((a, b) => b.percent - a.percent).slice(0, 4);
+    }
+
+    const DEFAULT_COPY = {
+      title: "F1总冠军车手？",
+      subtitle: "谁是你心中的冠军，做出预测吧",
+      footer: "查看产品：交易 - 预测市场",
+      titleFontSize: 110,
+      titleLineHeight: 1.2,
+      titleMaxWidth: 824,
+      subtitleFontSize: 46,
+      subtitleLineHeight: 1.3,
+      driverNameFontSize: 52,
+      headerImage: "assets/f1_car.png",
+      brandLogo: ""
+    };
+
+    let teams = [];
+    let copy = DEFAULT_COPY;
+
+    function toRate(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return 50;
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function renderHeader() {
+      const poster = document.getElementById('poster');
+      const title = String(copy.title || '').trim();
+      const subtitle = String(copy.subtitle || '').trim();
+      const footer = String(copy.footer || '').trim();
+
+      poster.style.setProperty('--title-size', `${Number(copy.titleFontSize || 110)}px`);
+      poster.style.setProperty('--title-line-height', String(copy.titleLineHeight || 1.2));
+      poster.style.setProperty('--title-max-width', `${Number(copy.titleMaxWidth || 824)}px`);
+      poster.style.setProperty('--subtitle-size', `${Number(copy.subtitleFontSize || 46)}px`);
+      poster.style.setProperty('--subtitle-line-height', String(copy.subtitleLineHeight || 1.3));
+      poster.style.setProperty('--driver-name-size', `${Number(copy.driverNameFontSize || 52)}px`);
+
+      document.getElementById('title').textContent = title;
+      document.getElementById('subtitle').textContent = subtitle;
+      document.getElementById('footer-text').textContent = footer;
+    }
+
+    function renderBgImage() {
+      const bgEl = document.getElementById('bg-image');
+      const src = window.BG_PATH || 'backgrounds-F1/BG.png';
+      bgEl.src = src;
+      bgEl.onerror = () => { bgEl.style.display = 'none'; };
+    }
+
+    function renderHeaderImage() {
+      const imgEl = document.getElementById('header-image');
+      const src = String(copy.headerImage || '').trim();
+      if (src) {
+        imgEl.style.display = 'block';
+        imgEl.src = src;
+        imgEl.onerror = () => { imgEl.style.display = 'none'; };
+      } else {
+        imgEl.style.display = 'none';
+      }
+    }
+
+    function renderBrand() {
+      const logoEl = document.getElementById('brand-logo');
+      const fallbackEl = document.getElementById('brand-fallback');
+      const logoSrc = String(copy.brandLogo || DEFAULT_BRAND_LOGO).trim();
+
+      if (!logoSrc) {
+        logoEl.style.display = 'none';
+        fallbackEl.style.display = 'block';
+        return;
+      }
+
+      logoEl.src = logoSrc;
+      logoEl.onerror = () => {
+        logoEl.style.display = 'none';
+        fallbackEl.style.display = 'block';
+      };
+      logoEl.onload = () => {
+        logoEl.style.display = 'block';
+        fallbackEl.style.display = 'none';
+      };
+    }
+
+    function renderGauge(percent) {
+      const clamped = toRate(percent);
+      return `
+        <div class="gauge">
+          <svg class="gauge-svg" viewBox="0 0 200 108" aria-hidden="true">
+            <path class="gauge-track" d="M16 92 A76 76 0 0 1 184 92" pathLength="100"></path>
+            <path class="gauge-fill" d="M16 92 A76 76 0 0 1 184 92" pathLength="100" style="stroke-dasharray:${clamped} 100"></path>
+          </svg>
+          <div class="gauge-center">
+            <div class="gauge-value">${clamped}%</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCards() {
+      const container = document.getElementById('cards');
+      container.innerHTML = teams.slice(0, 4).map(driver => {
+        const photo = String(driver.photo || '').trim();
+        const name = String(driver.name || '').trim();
+        const percent = toRate(driver.percent);
+        return `
+          <div class="card">
+            <div class="card-bg">
+              ${photo ? `<img src="${photo}" alt="" />` : ''}
+              <div class="card-bg-gradient"></div>
+            </div>
+            <div class="card-right">
+              <div class="driver-name">${name}</div>
+              ${renderGauge(percent)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function fitTitle() {
+      const poster = document.getElementById('poster');
+      const titleEl = document.getElementById('title');
+      const baseFontSize = Number(copy.titleFontSize || 110);
+      const twoLineFontSize = 86;
+      const minFontSize = 70;
+      const lineHeight = Number(copy.titleLineHeight || 1.2);
+
+      const maxH = (fs) => Math.ceil(fs * lineHeight * 2) + 4;
+
+      function measure(fs) {
+        poster.style.setProperty('--title-size', `${fs}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        return titleEl.scrollHeight;
+      }
+
+      const oneLineH = Math.ceil(baseFontSize * lineHeight) + 4;
+      if (measure(baseFontSize) <= oneLineH) {
+        titleEl.style.maxHeight = `${maxH(baseFontSize)}px`;
+        return;
+      }
+
+      if (measure(twoLineFontSize) <= maxH(twoLineFontSize)) {
+        titleEl.style.maxHeight = `${maxH(twoLineFontSize)}px`;
+        return;
+      }
+
+      let lo = minFontSize;
+      let hi = twoLineFontSize - 1;
+      let chosen = minFontSize;
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        if (measure(mid) <= maxH(mid)) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      measure(chosen);
+      titleEl.style.maxHeight = `${maxH(chosen)}px`;
+    }
+
+    async function render() {
+      // generate.js 注入了完整数据，直接用
+      if (window.GAMES_DATA) {
+        const payload = window.GAMES_DATA;
+        teams = Array.isArray(payload?.teams) ? payload.teams : [];
+        copy  = { ...DEFAULT_COPY, ...(payload?.copy || {}) };
+      } else {
+        // 预览模式：实时拉取 Polymarket
+        try {
+          teams = await fetchPolymarketDrivers(DEFAULT_POLYMARKET_SLUG);
+        } catch (err) {
+          console.error('Polymarket 拉取失败:', err);
+          teams = [];
+        }
+      }
+
+      renderHeader();
+      fitTitle();
+      renderBgImage();
+      renderHeaderImage();
+      renderBrand();
+      renderCards();
+    }
+
+    render();
+  </script>
+</body>
+</html>

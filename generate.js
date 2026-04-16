@@ -32,12 +32,30 @@ const TEAMS_CSV    = path.join(BASE_DIR, 'teams.csv');
 const FOOTBALL_TEAMS_CSV = path.join(BASE_DIR, 'football_teams.csv');
 const F1_TEAMS_CSV = path.join(BASE_DIR, 'teams_f1.csv');
 const F1_ICON_DIR  = path.join(BASE_DIR, 'assets', 'logos', 'F1 车队');
+const F1_DRIVER_CSV     = path.join(BASE_DIR, 'drivers_f1.csv');
+const F1_DRIVER_ICON_DIR = path.join(BASE_DIR, 'assets', 'logos', 'F1 Driver');
 const BG_DIR       = path.join(BASE_DIR, 'backgrounds-NBA');
 const WORLD_CUP_BG_DIR = path.join(BASE_DIR, 'backgrounds- football');
-const OUTPUT_DIR  = path.join(BASE_DIR, 'output');
+// 优先输出到主目录的 output/（worktree 场景向上三级）
+const OUTPUT_DIR = (() => {
+  const candidates = [
+    path.join(BASE_DIR, 'output'),
+    path.join(BASE_DIR, '..', '..', '..', 'output'),
+  ];
+  // 主目录 output 存在时优先用它，否则用本地
+  const mainOutput = candidates[1];
+  return fs.existsSync(path.dirname(mainOutput)) ? mainOutput : candidates[0];
+})();
 const POSTER_COPY_CONFIG = path.join(BASE_DIR, 'poster.copy.json');
 
-const LARK_CONFIG = path.join(BASE_DIR, 'lark.config.json');
+// lark.config.json 可能在主目录（worktree 上级），逐级向上查找
+const LARK_CONFIG = (() => {
+  const candidates = [
+    path.join(BASE_DIR, 'lark.config.json'),
+    path.join(BASE_DIR, '..', '..', '..', 'lark.config.json'),  // worktree: /.claude/worktrees/NAME/
+  ];
+  return candidates.find(p => fs.existsSync(p)) ?? candidates[0];
+})();
 const TEMPLATE_CONFIGS = {
   classic: {
     aliases: ['classic', 'default', '标准', '默认'],
@@ -63,6 +81,12 @@ const TEMPLATE_CONFIGS = {
     file: path.join(BASE_DIR, 'poster.f1.html'),
     outputPrefix: 'F1',
     outputSubDir: 'F1 车队'
+  },
+  f1driver: {
+    aliases: ['f1driver', 'f1-driver', 'f1车手', 'f1 driver', 'driver'],
+    file: path.join(BASE_DIR, 'poster.f1driver.html'),
+    outputPrefix: 'F1Driver',
+    outputSubDir: 'F1 Driver'
   }
 };
 
@@ -185,6 +209,8 @@ function loadLarkConfig() {
     worldCupSheetId: String(config.worldCupSheetId ?? '').trim(),
     f1SheetId: String(config.f1SheetId ?? '').trim(),
     f1SpreadsheetToken: String(config.f1SpreadsheetToken ?? '').trim(),
+    f1DriverSheetId: String(config.f1DriverSheetId ?? '').trim(),
+    f1DriverSpreadsheetToken: String(config.f1DriverSpreadsheetToken ?? '').trim(),
     sourceLang: String(config.sourceLang ?? 'zh-CN').trim(),
     anthropicApiKey: String(config.anthropicApiKey ?? '').trim()
   };
@@ -873,6 +899,280 @@ function buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, cop
       subtitleFontSize: Number(mergedCopy.subtitleFontSize ?? 46),
       subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3),
       teamNameFontSize: Number(mergedCopy.teamNameFontSize ?? 52),
+      headerImage: String(mergedCopy.headerImage ?? 'assets/f1_car.png'),
+      brandLogo: String(defaultCopy.brandLogo ?? '')
+    }
+  };
+}
+
+// ── F1 车手：Photo 文件路径（assets/logos/F1 Driver/{photo}.png）──
+function findF1DriverPhotoPath(driverId, driversMap) {
+  const photoName = driversMap[driverId]?.['photo'];
+  if (!photoName) return null;
+  const photoPath = path.join(F1_DRIVER_ICON_DIR, `${photoName}.png`);
+  return fs.existsSync(photoPath) ? photoPath : null;
+}
+
+// ── F1 车手：Polymarket outcome 匹配驾驶员 ──
+function resolveF1DriverByOutcome(outcomeText, driversMap) {
+  const normalized = normalizeOutcomeToken(outcomeText);
+  if (!normalized) return null;
+  for (const [id, driver] of Object.entries(driversMap)) {
+    const aliases = [id, driver.en, driver['zh-CN'], driver['zh-TW'], driver.ja, driver.photo]
+      .map(v => normalizeOutcomeToken(v)).filter(Boolean);
+    if (aliases.some(a => a === normalized || normalized.includes(a) || a.includes(normalized))) return id;
+  }
+  return null;
+}
+
+// ── F1 车手：从多选市场构建排名（分站赛冠军等）──
+function buildF1DriversFromPolymarketMarket(market, driversMap) {
+  const slug = String(market?.slug ?? '').trim() || 'unknown';
+  const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(s => String(s).trim());
+  const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
+  if (outcomes.length !== prices.length) {
+    throw new Error(`Polymarket 市场（${slug}）outcomes 与 outcomePrices 数量不匹配`);
+  }
+  return outcomes.map((outcome, i) => {
+    const percent = toPercentProbability(prices[i]);
+    if (!Number.isFinite(percent)) return null;
+    const driverId = resolveF1DriverByOutcome(outcome, driversMap);
+    return {
+      driverId: driverId ?? `__raw__${outcome}`,
+      _rawName: outcome,
+      percent: Math.max(0, Math.min(100, Math.round(percent)))
+    };
+  }).filter(Boolean).sort((a, b) => b.percent - a.percent).slice(0, 4);
+}
+
+// ── F1 车手：从 Yes/No event 构建排名（总冠军等）──
+function buildF1DriversFromPolymarketYesNoEvent(event, driversMap) {
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  const driverProbs = [];
+
+  for (const market of markets) {
+    const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', market?.slug ?? '')
+      .map(s => String(s).trim());
+    const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', market?.slug ?? '');
+    const yesIdx = outcomes.findIndex(o => o.toLowerCase() === 'yes');
+    if (yesIdx === -1) continue;
+
+    const percent = toPercentProbability(prices[yesIdx]);
+    if (!Number.isFinite(percent)) continue;
+
+    const rawName = extractTeamNameFromQuestion(market.question)
+      ?? String(market.slug ?? '').replace(/^will-/, '').replace(/-win-.*$/, '').replace(/-be-.*$/, '').replace(/-/g, ' ');
+
+    const driverId = resolveF1DriverByOutcome(rawName, driversMap);
+    driverProbs.push({
+      driverId: driverId ?? `__raw__${rawName}`,
+      _rawName: rawName,
+      percent: Math.max(0, Math.min(100, Math.round(percent)))
+    });
+  }
+
+  return driverProbs.sort((a, b) => b.percent - a.percent).slice(0, 4);
+}
+
+async function fetchF1DriversFromPolymarket(inputSlugOrUrl, driversMap) {
+  const slug = extractPolymarketSlug(inputSlugOrUrl);
+  if (!slug) return null;
+
+  // 先尝试单个 market（适合分站赛多选市场）
+  let market = null;
+  try {
+    market = await fetchPolymarketMarketBySlug(slug);
+  } catch (err) {
+    if (!String(err?.message ?? '').includes('HTTP 404')) throw err;
+  }
+  if (market) return buildF1DriversFromPolymarketMarket(market, driversMap);
+
+  // 再尝试 event（适合总冠军等多个 Yes/No 子市场）
+  const event = await fetchPolymarketEventBySlug(slug);
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  if (markets.length === 0) throw new Error(`Polymarket 事件（${slug}）没有 markets 数据`);
+
+  const firstOutcomes = parseJsonArrayField(markets[0]?.outcomes ?? '[]', 'outcomes', '').map(s => String(s).toLowerCase().trim());
+  const isYesNoEvent = firstOutcomes.includes('yes') && firstOutcomes.includes('no');
+
+  if (isYesNoEvent) {
+    return buildF1DriversFromPolymarketYesNoEvent(event, driversMap);
+  }
+
+  const mainMarket = markets.reduce((best, m) => {
+    const blen = parseJsonArrayField(best?.outcomes ?? '[]', 'outcomes', 'best').length;
+    const mlen = parseJsonArrayField(m?.outcomes ?? '[]', 'outcomes', 'cur').length;
+    return mlen > blen ? m : best;
+  });
+  return buildF1DriversFromPolymarketMarket(mainMarket, driversMap);
+}
+
+// ── F1 车手：从 Lark 读取事件数据 ──
+// 表头（A1）：main title | sub title | footer | driver_1 | percent_1 | driver_2 | percent_2 | driver_3 | percent_3 | driver_4 | percent_4
+// 竖向配置：market_slug = <Polymarket URL>
+async function fetchF1DriverEventsFromLark(config, accessToken) {
+  const sheetId = String(config.f1DriverSheetId ?? '').trim();
+  if (!sheetId) {
+    throw new Error('lark.config.json 缺少 f1DriverSheetId');
+  }
+
+  const spreadsheetToken = config.f1DriverSpreadsheetToken || config.f1SpreadsheetToken || config.spreadsheetToken;
+  if (!spreadsheetToken) {
+    throw new Error('lark.config.json 缺少 f1DriverSpreadsheetToken / spreadsheetToken');
+  }
+
+  const range = encodeURIComponent(`${sheetId}!A1:L30`);
+  const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark F1车手表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('F1车手表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
+  const row = values[1].map(cell => String(cell ?? '').trim());
+
+  function col(name) {
+    const idx = headers.indexOf(name);
+    return idx !== -1 ? row[idx] : '';
+  }
+
+  const kvAliases = { market_slug: 'polymarket_url', polymarket_url: 'polymarket_url', polymarket_slug: 'polymarket_url' };
+  const kvConfig = {};
+  for (const rowData of values) {
+    const key = String(rowData[0] ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+    const val = String(rowData[1] ?? '').trim();
+    if (kvAliases[key] && val) {
+      kvConfig[kvAliases[key]] = val;
+    }
+  }
+
+  return {
+    mainTitle: col('main title'),
+    subTitle: col('sub title'),
+    footer: col('footer'),
+    polymarket_url: kvConfig.polymarket_url ?? '',
+    drivers: [
+      { driverId: col('driver_1'), percent: Number(col('percent_1')) || 33 },
+      { driverId: col('driver_2'), percent: Number(col('percent_2')) || 33 },
+      { driverId: col('driver_3'), percent: Number(col('percent_3')) || 34 },
+      { driverId: col('driver_4'), percent: Number(col('percent_4')) || 0 }
+    ].filter(d => d.driverId)
+  };
+}
+
+// ── F1 车手：翻译标题/副标题/footer ──
+async function translateF1DriverTitles(sourceData, targetLangs, fromLang = 'zh-CN') {
+  const texts = [sourceData.mainTitle, sourceData.subTitle, sourceData.footer];
+  const result = {};
+
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    result[lang] = {
+      mainTitle: translated[0],
+      subTitle: translated[1],
+      footer: translated[2]
+    };
+    console.log(' ✅');
+  }
+
+  return result;
+}
+
+// ── F1 车手：翻译结果回填到 Lark ──
+async function writeBackF1DriverTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId) {
+  const langs = Object.keys(translationsMap);
+  const rows = langs.map(lang => {
+    const d = translationsMap[lang];
+    return [
+      lang,
+      String(d.mainTitle ?? ''),
+      String(d.subTitle ?? ''),
+      String(d.footer ?? '')
+    ];
+  });
+
+  const startRow = 3;
+  const endRow = startRow + rows.length - 1;
+  const range = `${sheetId}!A${startRow}:D${endRow}`;
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ valueRange: { range, values: rows } })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`F1车手翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+  return rows.length;
+}
+
+// ── F1 车手：构建海报 payload ──
+function buildF1DriverPosterPayload(sourceData, translationsMap, driversMap, lang, copyConfig) {
+  const templateCopy = copyConfig?.f1driver ?? {};
+  const defaultCopy = templateCopy?.default ?? {};
+  const langCopy = templateCopy?.[lang] ?? {};
+  const mergedCopy = { ...defaultCopy, ...langCopy };
+
+  const translated = translationsMap[lang] ?? sourceData;
+
+  const driversData = sourceData.drivers.map(entry => {
+    // Polymarket 未识别的车手：直接用原始名称
+    if (String(entry.driverId ?? '').startsWith('__raw__')) {
+      return {
+        name: String(entry._rawName ?? entry.driverId.replace('__raw__', '')).trim(),
+        photo: '',
+        percent: entry.percent
+      };
+    }
+
+    const driverInfo = driversMap[entry.driverId] ?? {};
+    // 车手姓名：CJK 语言用本地化名，其他语言统一用英文
+    const driverName = ['zh-CN', 'zh-TW', 'ja'].includes(lang)
+      ? (driverInfo[lang] ?? driverInfo['en'] ?? entry.driverId)
+      : (driverInfo['en'] ?? entry.driverId);
+    const photoPath = findF1DriverPhotoPath(entry.driverId, driversMap);
+
+    if (!driverInfo['en']) {
+      warnOnce(`f1-driver-missing:${entry.driverId}`, `F1车手 ID 不存在：${entry.driverId}`);
+    }
+
+    return {
+      name: driverName,
+      photo: photoPath ?? '',
+      percent: entry.percent
+    };
+  });
+
+  return {
+    teams: driversData,   // HTML 模板读 payload.teams 数组
+    copy: {
+      title: String(translated.mainTitle ?? '').trim(),
+      subtitle: String(translated.subTitle ?? '').trim(),
+      footer: String(translated.footer ?? '').trim(),
+      titleFontSize: Number(mergedCopy.titleFontSize ?? 110),
+      titleLineHeight: Number(mergedCopy.titleLineHeight ?? 1.2),
+      titleMaxWidth: Number(mergedCopy.titleMaxWidth ?? 824),
+      subtitleFontSize: Number(mergedCopy.subtitleFontSize ?? 46),
+      subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3),
+      driverNameFontSize: Number(mergedCopy.driverNameFontSize ?? 52),
       headerImage: String(mergedCopy.headerImage ?? 'assets/f1_car.png'),
       brandLogo: String(defaultCopy.brandLogo ?? '')
     }
@@ -2128,6 +2428,108 @@ async function main() {
         : (genericBgPath || '');
       const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
       const posterPayload = buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, copyConfig);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+    }
+
+    await browser.close();
+    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.png`));
+    return;
+  }
+
+  // ── F1 车手流程 ──────────────────────────────────────────
+  if (templateKey === 'f1driver') {
+    console.log('\n从 Lark F1车手表格拉取数据...');
+    const larkConfig = loadLarkConfig();
+    const accessToken = await getLarkTenantAccessToken(larkConfig);
+    const sourceData = await fetchF1DriverEventsFromLark(larkConfig, accessToken);
+    console.log('  ✅ 已读取 F1 车手事件数据');
+
+    const driversMap = loadTeams(F1_DRIVER_CSV);
+
+    // ── 若填了 Polymarket URL，自动抓取前4名概率覆盖手动数据 ──
+    const polyUrl = String(sourceData.polymarket_url ?? '').trim();
+    if (polyUrl) {
+      console.log(`\n检测到 Polymarket URL，正在拉取数据：${polyUrl}`);
+      try {
+        const polyDrivers = await fetchF1DriversFromPolymarket(polyUrl, driversMap);
+        if (polyDrivers && polyDrivers.length > 0) {
+          sourceData.drivers = polyDrivers;
+          console.log(`  ✅ Polymarket 数据已加载（${polyDrivers.length} 位车手）`);
+          console.log(`     ${polyDrivers.map(d => `${String(d._rawName ?? d.driverId).split(/\s+/).slice(-1)[0]}(${d.percent}%)`).join(', ')}`);
+        } else {
+          console.warn('  ⚠️  Polymarket 返回数据为空，使用 Lark 手动数据');
+          console.log(`     车手：${sourceData.drivers.map(d => `${d.driverId}(${d.percent}%)`).join(', ')}`);
+        }
+      } catch (err) {
+        console.warn(`  ⚠️  Polymarket 拉取失败（${err.message}），使用 Lark 手动数据`);
+        console.log(`     车手：${sourceData.drivers.map(d => `${d.driverId}(${d.percent}%)`).join(', ')}`);
+      }
+    } else {
+      console.log(`     车手：${sourceData.drivers.map(d => `${d.driverId}(${d.percent}%)`).join(', ')}`);
+    }
+
+    const F1_DRIVER_BG_DIR = path.join(BASE_DIR, 'backgrounds-F1');
+    const KNOWN_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi']);
+    const F1_DRIVER_ALL_TARGET_LANGS = ['zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi'];
+
+    const langBgMap = {};
+    let genericBgPath = '';
+
+    if (fs.existsSync(F1_DRIVER_BG_DIR)) {
+      const bgFileNames = fs.readdirSync(F1_DRIVER_BG_DIR).filter(f => /\.(png|jpg)$/i.test(f));
+      for (const f of bgFileNames) {
+        const lang = path.parse(f).name;
+        if (KNOWN_LANGS.has(lang)) {
+          langBgMap[lang] = path.join(F1_DRIVER_BG_DIR, f);
+        } else if (!genericBgPath) {
+          genericBgPath = path.join(F1_DRIVER_BG_DIR, f);
+        }
+      }
+    }
+    if (!genericBgPath && Object.keys(langBgMap).length === 0) {
+      console.warn('⚠️  backgrounds-F1/ 目录下没有背景图，将使用纯黑背景');
+    }
+
+    const sourceLang = larkConfig.sourceLang || 'zh-CN';
+    const hasLangBg = Object.keys(langBgMap).length > 0;
+    const targetLangs = hasLangBg
+      ? Object.keys(langBgMap).filter(l => l !== sourceLang)
+      : F1_DRIVER_ALL_TARGET_LANGS;
+
+    let translationsMap = { [sourceLang]: sourceData };
+
+    if (targetLangs.length > 0) {
+      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
+      const translated = await translateF1DriverTitles(sourceData, targetLangs, sourceLang);
+      translationsMap = { ...translationsMap, ...translated };
+
+      console.log('\n回填翻译结果到 Lark 表格...');
+      const driverToken = larkConfig.f1DriverSpreadsheetToken || larkConfig.f1SpreadsheetToken || larkConfig.spreadsheetToken;
+      const writtenCount = await writeBackF1DriverTranslationsToLark(
+        sourceData, translationsMap,
+        accessToken, driverToken, larkConfig.f1DriverSheetId
+      );
+      console.log(`  ✅ 已回填 ${writtenCount} 种语言`);
+    }
+
+    const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
+    const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
+
+    const langsToGenerate = [sourceLang, ...targetLangs];
+
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
+
+    console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+    for (const lang of langsToGenerate) {
+      const bgPath = hasLangBg
+        ? (langBgMap[lang] || genericBgPath || '')
+        : (genericBgPath || '');
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const posterPayload = buildF1DriverPosterPayload(sourceData, translationsMap, driversMap, lang, copyConfig);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
     }
 
