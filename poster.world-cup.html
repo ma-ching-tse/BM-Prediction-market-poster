@@ -93,7 +93,6 @@
       font-weight: 400;
       line-height: var(--subtitle-line-height);
       overflow: hidden;
-      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
@@ -532,10 +531,43 @@
       titleEl.style.maxHeight = `${maxH(chosen)}px`;
     }
 
+    // 副标题始终保持单行：过长时自动缩小字号，不显示省略号
+    function fitSubtitle() {
+      const poster = document.getElementById('poster');
+      const subtitleEl = document.getElementById('subtitle');
+      if (!poster || !subtitleEl) return;
+
+      const baseFontSize = Number(copy.subtitleFontSize || 46);
+      const minFontSize = 24;
+
+      poster.style.setProperty('--subtitle-size', `${baseFontSize}px`);
+      subtitleEl.style.textOverflow = 'clip';
+      void subtitleEl.offsetWidth;
+
+      if (subtitleEl.scrollWidth <= subtitleEl.clientWidth + 1) return;
+
+      let lo = minFontSize;
+      let hi = baseFontSize;
+      let chosen = minFontSize;
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        poster.style.setProperty('--subtitle-size', `${mid}px`);
+        void subtitleEl.offsetWidth;
+        if (subtitleEl.scrollWidth <= subtitleEl.clientWidth + 1) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      poster.style.setProperty('--subtitle-size', `${chosen}px`);
+    }
+
     function render() {
       const lang = resolveLang();
       renderHeader(lang);
       fitTitle();
+      fitSubtitle();
       renderBrand();
       renderCards(lang);
     }

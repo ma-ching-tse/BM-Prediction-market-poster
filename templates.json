@@ -25,6 +25,14 @@
       "script": "npm run generate:worldcup"
     },
     {
+      "key": "football",
+      "name": "足球赛事",
+      "file": "poster.football-soccer.html",
+      "previewUrl": "http://localhost:3001/poster.football-soccer.html",
+      "outputDir": "output/足球赛事/",
+      "script": "npm run generate:football"
+    },
+    {
       "key": "coinprice",
       "name": "币价预测",
       "file": "poster.coin-price.html",
@@ -42,6 +50,22 @@
       "logosDir": "assets/logos/全球预测市场/",
       "larkSheet": "ZbFFnr",
       "script": "npm run generate:global"
+    },
+    {
+      "key": "f1",
+      "name": "F1 车队",
+      "file": "poster.f1.html",
+      "previewUrl": "http://localhost:3001/poster.f1.html",
+      "outputDir": "output/F1 车队/",
+      "script": "npm run generate:f1"
+    },
+    {
+      "key": "f1driver",
+      "name": "F1 车手",
+      "file": "poster.f1driver.html",
+      "previewUrl": "http://localhost:3001/poster.f1driver.html",
+      "outputDir": "output/F1 Driver/",
+      "script": "npm run generate:f1driver"
     }
   ]
 }

@@ -1,0 +1,7 @@
+name: 足球赛事
+key: football
+previewUrl: http://localhost:3001/poster.football-soccer.html
+script: npm run generate:football
+templateFile: poster.football-soccer.html
+outputDir: output/足球赛事/
+outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/足球赛事/

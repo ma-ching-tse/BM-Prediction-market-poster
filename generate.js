@@ -36,16 +36,9 @@ const F1_DRIVER_CSV     = path.join(BASE_DIR, 'drivers_f1.csv');
 const F1_DRIVER_ICON_DIR = path.join(BASE_DIR, 'assets', 'logos', 'F1 Driver');
 const BG_DIR       = path.join(BASE_DIR, 'backgrounds-NBA');
 const WORLD_CUP_BG_DIR = path.join(BASE_DIR, 'backgrounds- football');
-// 优先输出到主目录的 output/（worktree 场景向上三级）
-const OUTPUT_DIR = (() => {
-  const candidates = [
-    path.join(BASE_DIR, 'output'),
-    path.join(BASE_DIR, '..', '..', '..', 'output'),
-  ];
-  // 主目录 output 存在时优先用它，否则用本地
-  const mainOutput = candidates[1];
-  return fs.existsSync(path.dirname(mainOutput)) ? mainOutput : candidates[0];
-})();
+const GLOBAL_BG_DIR = path.join(BASE_DIR, 'backgrounds-global');
+// 统一固定输出到当前项目目录，避免写到上级目录造成混淆。
+const OUTPUT_DIR = path.join(BASE_DIR, 'output');
 const POSTER_COPY_CONFIG = path.join(BASE_DIR, 'poster.copy.json');
 
 // lark.config.json 可能在主目录（worktree 上级），逐级向上查找
@@ -75,6 +68,33 @@ const TEMPLATE_CONFIGS = {
     outputPrefix: '世界杯',
     outputSubDir: '世界杯',
     bgDir: WORLD_CUP_BG_DIR
+  },
+  football: {
+    aliases: ['football', 'soccer', 'football-soccer', '足球', '足球赛事'],
+    file: path.join(BASE_DIR, 'poster.football-soccer.html'),
+    outputPrefix: '足球赛事',
+    outputSubDir: '足球赛事',
+    bgDir: WORLD_CUP_BG_DIR,
+    teamsCsv: FOOTBALL_TEAMS_CSV,
+    larkSheet: 'Fleir2'
+  },
+  coinprice: {
+    aliases: ['coinprice', 'coin-price', 'coin', '币价预测', '币价'],
+    file: path.join(BASE_DIR, 'poster.coin-price.html'),
+    outputPrefix: '币价预测',
+    outputSubDir: '币价预测',
+    bgDir: GLOBAL_BG_DIR,
+    logosDir: path.join(BASE_DIR, 'assets', 'logos', '币价预测'),
+    larkSheet: 'dxcuKC'
+  },
+  global: {
+    aliases: ['global', 'global-prediction-market', '全球预测市场'],
+    file: path.join(BASE_DIR, 'poster.global-prediction-market.html'),
+    outputPrefix: '全球预测市场',
+    outputSubDir: '全球预测市场',
+    bgDir: GLOBAL_BG_DIR,
+    logosDir: path.join(BASE_DIR, 'assets', 'logos', '全球预测市场'),
+    larkSheet: 'ZbFFnr'
   },
   f1: {
     aliases: ['f1', 'f1赛车', 'F1', 'formula1', 'formula-1'],
@@ -117,7 +137,11 @@ function parseCliOptions(argv = process.argv.slice(2)) {
         '  classic        标准赛事卡片模板（默认）',
         '  comprehensive  综合事件模版',
         '  worldcup       世界杯模版',
-        '  f1             F1车队海报模版'
+        '  football       足球赛事模版',
+        '  coinprice      币价预测模版',
+        '  global         全球预测市场模版',
+        '  f1             F1车队海报模版',
+        '  f1driver       F1车手海报模版'
       ].join('\n'));
       process.exit(0);
     }
@@ -615,7 +639,10 @@ function loadTeams(filePath) {
 function findLogoPath(teamId, teamsMap) {
   const logoName = teamsMap[teamId]?.['logo'];
   if (!logoName) return null;
-  const logoPath = path.join(BASE_DIR, 'NBA_icon', `${logoName}.png`);
+  const normalizedLogo = String(logoName).trim();
+  const logoPath = normalizedLogo.includes('/')
+    ? path.join(BASE_DIR, normalizedLogo)
+    : path.join(BASE_DIR, 'NBA_icon', `${normalizedLogo}.png`);
   return fs.existsSync(logoPath) ? logoPath : null;
 }
 
@@ -1282,6 +1309,8 @@ function validateWinRates(gamesRows) {
 
 function normalizeOutcomeToken(value) {
   return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
     .trim()
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '');
@@ -1301,6 +1330,12 @@ function parseJsonArrayField(value, fieldName, slug) {
   } catch {
     throw new Error(`Polymarket 字段异常（${slug}.${fieldName}）：JSON 解析失败`);
   }
+}
+
+function sanitizeCardText(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return '';
+  return raw.replace(/^#+\s*/u, '').trim();
 }
 
 function buildTeamAliasTokens(teamId, teamsMap) {
@@ -1328,6 +1363,73 @@ function buildTeamAliasTokens(teamId, teamsMap) {
     }
   }
   return aliases;
+}
+
+function resolveTeamId(inputTeamId, teamsMap) {
+  const raw = String(inputTeamId ?? '').trim();
+  if (!raw) return raw;
+
+  if (teamsMap[raw]) return raw;
+
+  const lowered = raw.toLowerCase();
+  if (teamsMap[lowered]) return lowered;
+
+  const normalizedRaw = normalizeOutcomeToken(raw);
+  if (!normalizedRaw) return raw;
+
+  for (const [teamId, team] of Object.entries(teamsMap)) {
+    const candidates = [
+      teamId,
+      team.logo,
+      team.en,
+      team['zh-CN'],
+      team['zh-TW'],
+      team.ja
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const normalizedCandidate = normalizeOutcomeToken(candidate);
+      if (normalizedCandidate && normalizedCandidate === normalizedRaw) {
+        return teamId;
+      }
+
+      const parts = String(candidate).trim().split(/\s+/);
+      if (parts.length > 1) {
+        const tail = normalizeOutcomeToken(parts[parts.length - 1]);
+        if (tail && tail === normalizedRaw) {
+          return teamId;
+        }
+      }
+    }
+  }
+
+  return raw;
+}
+
+function normalizeGameRowsTeamIds(gamesRows, teamsMap) {
+  return gamesRows.map((row, index) => {
+    const normalizedHome = resolveTeamId(row.home_team, teamsMap);
+    const normalizedAway = resolveTeamId(row.away_team, teamsMap);
+
+    if (normalizedHome !== row.home_team) {
+      warnOnce(
+        `team-normalized-home:${index}:${row.home_team}`,
+        `已自动归一主队 ID：${row.home_team} -> ${normalizedHome}`
+      );
+    }
+    if (normalizedAway !== row.away_team) {
+      warnOnce(
+        `team-normalized-away:${index}:${row.away_team}`,
+        `已自动归一客队 ID：${row.away_team} -> ${normalizedAway}`
+      );
+    }
+
+    return {
+      ...row,
+      home_team: normalizedHome,
+      away_team: normalizedAway
+    };
+  });
 }
 
 function findOutcomeIndexByAliases(outcomes, aliases) {
@@ -1414,6 +1516,18 @@ function extractPolymarketSlug(input) {
   return raw.replace(/^\/+|\/+$/g, '');
 }
 
+function normalizePolymarketInputSlug(rawInput) {
+  const raw = String(rawInput ?? '').trim();
+  if (!raw) return '';
+
+  const normalized = extractPolymarketSlug(raw);
+  // 周赛列表链接会解析成纯数字（如 "26"），不可直接用于抓赔率，回退自动匹配。
+  if (/^\d+$/.test(normalized) && /\/sports\/.+\/games\/week\//i.test(raw)) {
+    return '';
+  }
+  return normalized;
+}
+
 function normalizeConfigKey(key) {
   return String(key ?? '')
     .trim()
@@ -1483,7 +1597,7 @@ function buildWorldCupCardsFromPolymarketMarket(market, cardCount, footballTeams
       if (!Number.isFinite(percent)) return null;
       const rounded = Math.max(0, Math.min(100, Math.round(percent)));
       const team = resolveWorldCupTeamByOutcome(outcome, footballTeamsMap);
-      const displayText = String(team?.['zh-CN'] ?? outcome).trim();
+      const displayText = sanitizeCardText(team?.['zh-CN'] ?? outcome);
 
       let image = '';
       if (team?.logo) {
@@ -1539,7 +1653,7 @@ function buildWorldCupCardsFromPolymarketEvent(event, cardCount, footballTeamsMa
     if (!teamLabel) continue;
 
     const team = resolveWorldCupTeamByOutcome(teamLabel, footballTeamsMap);
-    const displayText = String(team?.['zh-CN'] ?? teamLabel).trim();
+    const displayText = sanitizeCardText(team?.['zh-CN'] ?? teamLabel);
 
     let image = '';
     if (team?.logo) {
@@ -1699,6 +1813,24 @@ function isPolymarketNbaMoneylineMarket(market) {
   return true;
 }
 
+function isPolymarketFootballMoneylineMarket(market) {
+  const question = String(market?.question ?? '').trim().toLowerCase();
+  const sportsMarketType = normalizeOutcomeToken(market?.sportsMarketType);
+
+  if (sportsMarketType && sportsMarketType !== 'moneyline') return false;
+  if (!question.includes(' vs')) return false;
+
+  try {
+    const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', String(market?.slug ?? '').trim() || 'unknown');
+    if (!Array.isArray(outcomes)) return false;
+    if (outcomes.length < 2 || outcomes.length > 3) return false;
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
 async function fetchPolymarketActiveNbaMarkets() {
   const sportsMetadata = await fetchPolymarketSportsMetadata();
   const discoveredTagId = resolvePolymarketNbaTagId(sportsMetadata);
@@ -1736,6 +1868,38 @@ async function fetchPolymarketActiveNbaMarkets() {
   throw new Error('Polymarket NBA markets 为空：未获取到任何可用的 moneyline 市场');
 }
 
+async function fetchPolymarketActiveFootballMarkets() {
+  const tagId = 100350; // 足球总标签
+  const limit = 200;
+  const allMarkets = [];
+
+  for (let offset = 0; offset < 20000; offset += limit) {
+    const batch = await fetchPolymarketJson(
+      buildPolymarketMarketsUrl(tagId, offset, limit),
+      `Football markets 读取（tag_id=${tagId}, offset=${offset}）`
+    );
+    if (!Array.isArray(batch)) {
+      throw new Error(`Polymarket Football markets 返回异常：期望数组，实际为 ${typeof batch}`);
+    }
+    allMarkets.push(...batch);
+    if (batch.length < limit) break;
+  }
+
+  const deduped = new Map();
+  for (const market of allMarkets) {
+    const slug = String(market?.slug ?? '').trim();
+    if (!slug || deduped.has(slug)) continue;
+    if (!isPolymarketFootballMoneylineMarket(market)) continue;
+    deduped.set(slug, market);
+  }
+
+  if (deduped.size === 0) {
+    throw new Error('Polymarket Football markets 为空：未获取到任何可用的 moneyline 市场');
+  }
+
+  return [...deduped.values()];
+}
+
 function parseDateYMD(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -1748,6 +1912,17 @@ function parseDateYMD(value) {
   const month = match[2].padStart(2, '0');
   const day = match[3].padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function shiftDateYMD(dateYmd, deltaDays) {
+  const m = String(dateYmd ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(deltaDays || 0)));
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getUTCFullYear();
+  const mo = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${d}`;
 }
 
 function textContainsAnyAlias(text, aliases) {
@@ -1771,7 +1946,127 @@ function marketContainsDate(market, dateYmd) {
     market?.gameStartTime,
     market?.eventStartTime
   ];
-  return fields.some(item => String(item ?? '').includes(dateYmd));
+  const candidates = [
+    dateYmd,
+    shiftDateYMD(dateYmd, -1),
+    shiftDateYMD(dateYmd, 1)
+  ].filter(Boolean);
+
+  return fields.some(item => {
+    const text = String(item ?? '');
+    return candidates.some(candidate => text.includes(candidate));
+  });
+}
+
+function isYesNoOutcomes(outcomes) {
+  if (!Array.isArray(outcomes) || outcomes.length !== 2) return false;
+  const normalized = outcomes.map(item => normalizeOutcomeToken(item));
+  return normalized.includes('yes') && normalized.includes('no');
+}
+
+function getYesProbabilityFromMarket(market) {
+  const slug = String(market?.slug ?? '').trim() || 'unknown';
+  const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(String);
+  const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
+  if (!Array.isArray(outcomes) || !Array.isArray(prices) || outcomes.length !== prices.length) return NaN;
+  const yesIdx = outcomes.findIndex(item => normalizeOutcomeToken(item) === 'yes');
+  if (yesIdx === -1) return NaN;
+  return toPercentProbability(prices[yesIdx]);
+}
+
+function roundThreeWayProbabilities(homeRaw, awayRaw, drawRaw) {
+  const h = Number(homeRaw);
+  const a = Number(awayRaw);
+  const d = Number(drawRaw);
+  if (!Number.isFinite(h) || !Number.isFinite(a) || !Number.isFinite(d)) {
+    return { homeWin: NaN, awayWin: NaN, drawWin: NaN };
+  }
+
+  const total = h + a + d;
+  if (!(total > 0)) {
+    return { homeWin: NaN, awayWin: NaN, drawWin: NaN };
+  }
+
+  const nh = (h / total) * 100;
+  const na = (a / total) * 100;
+  const nd = (d / total) * 100;
+
+  let homeWin = Math.max(0, Math.min(100, Math.round(nh)));
+  let awayWin = Math.max(0, Math.min(100, Math.round(na)));
+  let drawWin = Math.max(0, Math.min(100, Math.round(nd)));
+  const sum = homeWin + awayWin + drawWin;
+  if (sum !== 100) {
+    const deltas = [
+      { key: 'home', delta: Math.abs(nh - homeWin) },
+      { key: 'away', delta: Math.abs(na - awayWin) },
+      { key: 'draw', delta: Math.abs(nd - drawWin) }
+    ].sort((x, y) => y.delta - x.delta);
+    const adjust = 100 - sum;
+    const target = deltas[0]?.key ?? 'draw';
+    if (target === 'home') homeWin = Math.max(0, Math.min(100, homeWin + adjust));
+    if (target === 'away') awayWin = Math.max(0, Math.min(100, awayWin + adjust));
+    if (target === 'draw') drawWin = Math.max(0, Math.min(100, drawWin + adjust));
+  }
+  return { homeWin, awayWin, drawWin };
+}
+
+async function resolveFootballOddsFromEvent(row, market, teamsMap, eventCache, fallbackEventSlug = '') {
+  const eventSlug = String(fallbackEventSlug ?? '').trim()
+    || String(market?.events?.[0]?.slug ?? '').trim()
+    || String(market?.events?.[0]?.ticker ?? '').trim();
+  if (!eventSlug) return null;
+
+  let eventData = eventCache.get(eventSlug);
+  if (!eventData) {
+    eventData = await fetchPolymarketEventBySlug(eventSlug);
+    eventCache.set(eventSlug, eventData);
+  }
+
+  const markets = Array.isArray(eventData?.markets) ? eventData.markets : [];
+  if (markets.length === 0) return null;
+
+  const homeAliases = buildTeamAliasTokens(row.home_team, teamsMap);
+  const awayAliases = buildTeamAliasTokens(row.away_team, teamsMap);
+  let homeMarket = null;
+  let awayMarket = null;
+  let drawMarket = null;
+
+  for (const m of markets) {
+    const title = String(m?.groupItemTitle ?? '');
+    const question = String(m?.question ?? '');
+    const combined = `${title} ${question}`.trim();
+    const isDraw = normalizeOutcomeToken(combined).includes('draw')
+      || normalizeOutcomeToken(combined).includes('tie');
+    if (isDraw) {
+      drawMarket = m;
+      continue;
+    }
+
+    const matchesHome = textContainsAnyAlias(combined, homeAliases);
+    const matchesAway = textContainsAnyAlias(combined, awayAliases);
+    if (matchesHome && !homeMarket) {
+      homeMarket = m;
+      continue;
+    }
+    if (matchesAway && !awayMarket) {
+      awayMarket = m;
+    }
+  }
+
+  if (!homeMarket || !awayMarket || !drawMarket) return null;
+
+  const homeProb = getYesProbabilityFromMarket(homeMarket);
+  const awayProb = getYesProbabilityFromMarket(awayMarket);
+  const drawProb = getYesProbabilityFromMarket(drawMarket);
+  const rounded = roundThreeWayProbabilities(homeProb, awayProb, drawProb);
+  if (!Number.isFinite(rounded.homeWin) || !Number.isFinite(rounded.awayWin) || !Number.isFinite(rounded.drawWin)) {
+    return null;
+  }
+  return {
+    homeWin: rounded.homeWin,
+    awayWin: rounded.awayWin,
+    drawWin: rounded.drawWin
+  };
 }
 
 function getTeamEnglishName(teamId, teamsMap) {
@@ -1782,9 +2077,10 @@ function getTeamEnglishName(teamId, teamsMap) {
   return en;
 }
 
-function scoreMarketCandidate(market, dateYmd, homeAliases, awayAliases) {
+function scoreMarketCandidate(market, dateYmd, homeAliases, awayAliases, options = {}) {
   const question = String(market?.question ?? '');
   const slug = String(market?.slug ?? '');
+  const sport = String(options.sport ?? 'nba').trim().toLowerCase();
   let outcomes = [];
   try {
     outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(String);
@@ -1801,9 +2097,11 @@ function scoreMarketCandidate(market, dateYmd, homeAliases, awayAliases) {
   const awayMatched = outcomeAway || textAway;
   const dateMatched = marketContainsDate(market, dateYmd);
   const nbaHint = slug.startsWith('nba-') || normalizeOutcomeToken(question).includes('nba');
+  const footballHint = normalizeOutcomeToken(question).includes('vs');
 
   let score = 0;
-  if (nbaHint) score += 40;
+  if (sport === 'nba' && nbaHint) score += 40;
+  if (sport === 'football' && footballHint) score += 20;
   if (homeMatched) score += 40;
   if (awayMatched) score += 40;
   if (dateMatched) score += 40;
@@ -1811,10 +2109,12 @@ function scoreMarketCandidate(market, dateYmd, homeAliases, awayAliases) {
   if (textHome && textAway) score += 20;
   if (market?.active === true) score += 5;
   score += Math.min(Number(market?.volumeNum ?? market?.volume ?? 0) / 10000, 10);
+  const requireDateMatch = sport !== 'football';
+  const isAccepted = homeMatched && awayMatched && (requireDateMatch ? dateMatched : true);
   return {
-    score: homeMatched && awayMatched && dateMatched ? score : -1,
+    score: isAccepted ? score : -1,
     previewScore: score,
-    reason: homeMatched && awayMatched && dateMatched ? 'ok' : 'team/date mismatch',
+    reason: isAccepted ? 'ok' : 'team/date mismatch',
     homeMatched,
     awayMatched,
     dateMatched
@@ -1847,7 +2147,7 @@ function summarizeMarketForError(market, diagnostics = {}) {
   return parts.join(' | ');
 }
 
-async function resolvePolymarketMarketByGame(row, teamsMap, activeNbaMarkets, searchCache) {
+async function resolvePolymarketMarketByGame(row, teamsMap, activeNbaMarkets, searchCache, options = {}) {
   if (row.polymarket_slug) {
     return { slug: row.polymarket_slug, market: null };
   }
@@ -1869,7 +2169,7 @@ async function resolvePolymarketMarketByGame(row, teamsMap, activeNbaMarkets, se
   let bestScore = -1;
   const inspected = [];
   for (const market of activeNbaMarkets) {
-    const result = scoreMarketCandidate(market, dateYmd, homeAliases, awayAliases);
+    const result = scoreMarketCandidate(market, dateYmd, homeAliases, awayAliases, options);
     inspected.push({ market, result });
     const { score } = result;
     if (score > bestScore) {
@@ -1898,34 +2198,100 @@ async function resolvePolymarketMarketByGame(row, teamsMap, activeNbaMarkets, se
   return resolved;
 }
 
-async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap) {
+async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap, options = {}) {
+  const sport = String(options.sport ?? 'nba').trim().toLowerCase();
+  const strictNotFound = options.strictNotFound !== false;
+  const includeDraw = options.includeDraw === true;
+
   const cache = new Map();
   const searchCache = new Map();
-  const activeNbaMarkets = await fetchPolymarketActiveNbaMarkets();
+  const eventCache = new Map();
+  const activeNbaMarkets = sport === 'football'
+    ? await fetchPolymarketActiveFootballMarkets()
+    : await fetchPolymarketActiveNbaMarkets();
   const nextRows = [];
   let enrichedCount = 0;
   let autoMatchedCount = 0;
 
   for (const row of gamesRows) {
-    const inputSlug = String(row.polymarket_slug ?? '').trim();
-    const { slug, market: resolvedMarket } = await resolvePolymarketMarketByGame(
-      row,
-      teamsMap,
-      activeNbaMarkets,
-      searchCache
-    );
+    const inputSlug = normalizePolymarketInputSlug(row.polymarket_slug);
+    const rowForResolve = inputSlug ? { ...row, polymarket_slug: inputSlug } : row;
+
+    let resolved;
+    try {
+      resolved = await resolvePolymarketMarketByGame(
+        rowForResolve,
+        teamsMap,
+        activeNbaMarkets,
+        searchCache,
+        { sport }
+      );
+    } catch (err) {
+      if (strictNotFound) throw err;
+      warnOnce(
+        `polymarket-not-found:${sport}:${row.home_team}:${row.away_team}:${row.date}`,
+        `未匹配到 ${row.home_team} vs ${row.away_team}（${row.date}）的 Polymarket 市场，保留原赔率`
+      );
+      nextRows.push({ ...row });
+      continue;
+    }
+
+    const { slug, market: resolvedMarket } = resolved;
     if (!inputSlug && slug) autoMatchedCount++;
 
     let market = resolvedMarket ?? cache.get(slug);
+    let fallbackEventSlug = '';
+    let skipThisRow = false;
     if (!market) {
-      market = await fetchPolymarketMarketBySlug(slug);
-      cache.set(slug, market);
+      try {
+        try {
+          market = await fetchPolymarketMarketBySlug(slug);
+          cache.set(slug, market);
+        } catch (err) {
+          const canTryEvent = sport === 'football' && includeDraw && String(err?.message ?? '').includes('HTTP 404');
+          if (!canTryEvent) throw err;
+
+          const eventData = await fetchPolymarketEventBySlug(slug);
+          eventCache.set(slug, eventData);
+          const eventMarkets = Array.isArray(eventData?.markets) ? eventData.markets : [];
+          market = eventMarkets[0] ?? null;
+          fallbackEventSlug = slug;
+          if (!market) {
+            throw new Error(`Polymarket 事件无可用盘口（${slug}）`);
+          }
+        }
+      } catch (err) {
+        if (strictNotFound) throw err;
+        warnOnce(
+          `polymarket-slug-failed:${sport}:${slug}`,
+          `Polymarket 链接/slug 无法解析（${slug}），保留原赔率`
+        );
+        nextRows.push({ ...row });
+        skipThisRow = true;
+      }
     }
+    if (skipThisRow) continue;
 
     const outcomes = parseJsonArrayField(market.outcomes, 'outcomes', slug).map(String);
     const outcomePrices = parseJsonArrayField(market.outcomePrices, 'outcomePrices', slug);
     if (outcomes.length === 0 || outcomes.length !== outcomePrices.length) {
       throw new Error(`Polymarket 数据异常（${slug}）：outcomes 与 outcomePrices 数量不一致`);
+    }
+
+    if (sport === 'football' && includeDraw && isYesNoOutcomes(outcomes)) {
+      const byEvent = await resolveFootballOddsFromEvent(row, market, teamsMap, eventCache, fallbackEventSlug);
+      if (byEvent) {
+        nextRows.push({
+          ...row,
+          polymarket_slug: slug,
+          home_win: String(byEvent.homeWin),
+          away_win: String(byEvent.awayWin),
+          draw_win: String(byEvent.drawWin),
+          __autoFilledFromPolymarket: true
+        });
+        enrichedCount++;
+        continue;
+      }
     }
 
     let homeIndex = -1;
@@ -1965,7 +2331,35 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap) {
 
     const rawHomeWin = toPercentProbability(outcomePrices[homeIndex]);
     const rawAwayWin = toPercentProbability(outcomePrices[awayIndex]);
-    const { homeWin, awayWin } = roundWinRatesToIntegers(rawHomeWin, rawAwayWin);
+
+    let homeWin;
+    let awayWin;
+    let drawWin = '';
+
+    if (includeDraw) {
+      let drawIndex = findOutcomeIndexByAliases(outcomes, new Set(['draw', 'tie']));
+      if (drawIndex === -1 && outcomes.length === 3) {
+        drawIndex = [0, 1, 2].find(idx => idx !== homeIndex && idx !== awayIndex);
+      }
+
+      const rawDrawWin = drawIndex === -1 ? NaN : toPercentProbability(outcomePrices[drawIndex]);
+      if (Number.isFinite(rawHomeWin) && Number.isFinite(rawAwayWin) && Number.isFinite(rawDrawWin)) {
+        homeWin = Math.max(0, Math.min(100, Math.round(rawHomeWin)));
+        awayWin = Math.max(0, Math.min(100, Math.round(rawAwayWin)));
+        let drawRate = Math.max(0, Math.min(100, Math.round(rawDrawWin)));
+        const sum = homeWin + awayWin + drawRate;
+        if (sum !== 100) drawRate = Math.max(0, Math.min(100, drawRate + (100 - sum)));
+        drawWin = String(drawRate);
+      } else {
+        homeWin = Number.isFinite(rawHomeWin) ? Math.max(0, Math.min(100, Math.round(rawHomeWin))) : NaN;
+        awayWin = Number.isFinite(rawAwayWin) ? Math.max(0, Math.min(100, Math.round(rawAwayWin))) : NaN;
+      }
+    } else {
+      const rounded = roundWinRatesToIntegers(rawHomeWin, rawAwayWin);
+      homeWin = rounded.homeWin;
+      awayWin = rounded.awayWin;
+    }
+
     if (!Number.isFinite(homeWin) || !Number.isFinite(awayWin)) {
       throw new Error(`Polymarket 概率解析失败（${slug}）：outcomePrices=${JSON.stringify(outcomePrices)}`);
     }
@@ -1975,6 +2369,7 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap) {
       polymarket_slug: slug,
       home_win: String(homeWin),
       away_win: String(awayWin),
+      draw_win: drawWin,
       __autoFilledFromPolymarket: true
     });
     enrichedCount++;
@@ -2036,7 +2431,7 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
     .map((index) => {
       const percentRaw = Number(col(`percent_${index}`));
       return {
-        text: col(String(index)),
+        text: sanitizeCardText(col(String(index))),
         percent: Number.isFinite(percentRaw) ? percentRaw : 50
       };
     });
@@ -2107,7 +2502,7 @@ async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'z
       subTitle: translated[1],
       footer: translated[2],
       cards: sourceData.cards.map((card, i) => ({
-        text: translated[3 + i],
+        text: sanitizeCardText(translated[3 + i]),
         percent: card.percent
       }))
     };
@@ -2115,6 +2510,563 @@ async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'z
   }
 
   return result;
+}
+
+// ── 全球预测市场：从 Lark 读取 title/stat/desc 三列 ───────────
+async function fetchGlobalCardsFromLark(config, accessToken, sheetId, sheetLabel = 'globalSheetId') {
+  const resolvedSheetId = String(sheetId ?? '').trim();
+  if (!resolvedSheetId) {
+    throw new Error(`lark.config.json 缺少 ${sheetLabel}`);
+  }
+
+  const spreadsheetToken = config.spreadsheetToken;
+  const range = encodeURIComponent(`${resolvedSheetId}!A1:Z40`);
+  const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark 全球预测市场表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('全球预测市场表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
+  const rowValues = values.slice(1);
+
+  function getHeaderIndex(name, fallbackIndex) {
+    const index = headers.indexOf(name);
+    return index !== -1 ? index : fallbackIndex;
+  }
+
+  const titleIndex = getHeaderIndex('title', 1);
+  const statIndex = getHeaderIndex('stat', 2);
+  const descIndex = getHeaderIndex('desc', 3);
+
+  const cards = rowValues
+    .map((row) => {
+      const title = String(row?.[titleIndex] ?? '').trim();
+      const stat = String(row?.[statIndex] ?? '').trim();
+      const desc = String(row?.[descIndex] ?? '').trim();
+      return { title, stat, desc };
+    })
+    .filter(card => card.title || card.stat || card.desc)
+    .slice(0, 3);
+
+  if (cards.length === 0) {
+    throw new Error('全球预测市场表格未读取到卡片数据，请检查 title/stat/desc 列');
+  }
+
+  return cards;
+}
+
+// ── 全球预测市场：翻译 title/desc，stat 原样保留 ─────────────
+async function translateGlobalCards(sourceCards, targetLangs, fromLang = 'zh-CN') {
+  const result = {};
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(
+      sourceCards.flatMap(card => [
+        translateOneText(card.title, fromLang, lang),
+        translateOneText(card.desc, fromLang, lang)
+      ])
+    );
+    result[lang] = sourceCards.map((card, i) => ({
+      title: translated[i * 2],
+      stat: String(card.stat ?? ''),
+      desc: translated[i * 2 + 1]
+    }));
+    console.log(' ✅');
+  }
+  return result;
+}
+
+function buildGlobalPosterPayload(cards, templateConfig) {
+  const defaultIcons = ['1.png', '2.png', '3.png'];
+  const logosDir = String(templateConfig.logosDir ?? '').trim();
+
+  return {
+    cards: cards.map((card, index) => {
+      const iconFile = defaultIcons[index] || defaultIcons[defaultIcons.length - 1];
+      const iconPath = logosDir
+        ? path.join(logosDir, iconFile)
+        : path.join(BASE_DIR, 'assets', 'logos', '全球预测市场', iconFile);
+      return {
+        icon: `file://${iconPath}`,
+        title: String(card.title ?? '').trim(),
+        stat: String(card.stat ?? '').trim(),
+        desc: String(card.desc ?? '').trim()
+      };
+    })
+  };
+}
+
+// ── 币价预测：从 Lark 读取主文案 + token/price/percent ─────────
+async function fetchCoinPriceDataFromLark(config, accessToken, sheetId, sourceLang = 'zh-CN', sheetLabel = 'coinPriceSheetId') {
+  const resolvedSheetId = String(sheetId ?? '').trim();
+  if (!resolvedSheetId) {
+    throw new Error(`lark.config.json 缺少 ${sheetLabel}`);
+  }
+
+  const spreadsheetToken = config.spreadsheetToken;
+  const range = encodeURIComponent(`${resolvedSheetId}!A1:Z40`);
+  const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark 币价预测表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('币价预测表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
+  const rows = values.slice(1).map(row => row.map(cell => String(cell ?? '').trim()));
+
+  function getCell(row, name, fallback = '') {
+    const idx = headers.indexOf(String(name).toLowerCase());
+    return idx !== -1 ? String(row[idx] ?? '').trim() : fallback;
+  }
+
+  const cardIndexes = headers
+    .map((header) => {
+      const m = /^(\d+)$/.exec(header);
+      if (!m) return null;
+      const index = Number(m[1]);
+      if (!Number.isInteger(index) || index <= 0) return null;
+      if (!headers.includes(`token_${index}`) || !headers.includes(`percent_${index}`)) return null;
+      return index;
+    })
+    .filter((v) => v !== null)
+    .sort((a, b) => a - b)
+    .slice(0, 3);
+
+  const sourceLangNormalized = String(sourceLang || 'zh-CN').trim().toLowerCase();
+  const sourceRow = rows.find(row => String(row[0] ?? '').trim().toLowerCase() === sourceLangNormalized)
+    || rows.find(row => String(row[0] ?? '').trim())
+    || rows[0];
+
+  const cards = (cardIndexes.length > 0 ? cardIndexes : [1, 2, 3])
+    .map((index) => {
+      const token = getCell(sourceRow, `token_${index}`);
+      const target = getCell(sourceRow, String(index));
+      const percentRaw = Number(getCell(sourceRow, `percent_${index}`));
+      const percent = Number.isFinite(percentRaw) ? Math.max(0, Math.min(100, percentRaw)) : 50;
+      return {
+        token,
+        target,
+        percent
+      };
+    })
+    .filter(card => card.token || card.target);
+
+  if (cards.length === 0) {
+    throw new Error('币价预测表格未读取到卡片数据，请检查 token_i / i / percent_i 列');
+  }
+
+  return {
+    mainTitle: getCell(sourceRow, 'main title'),
+    subTitle: getCell(sourceRow, 'sub title'),
+    footer: getCell(sourceRow, 'footer'),
+    cards
+  };
+}
+
+// ── 币价预测：只翻译标题/副标题/footer（卡片只显示币价，无需翻译）──
+async function translateCoinPriceData(sourceData, targetLangs, fromLang = 'zh-CN') {
+  const texts = [
+    sourceData.mainTitle,
+    sourceData.subTitle,
+    sourceData.footer
+  ];
+
+  const result = {};
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    result[lang] = {
+      mainTitle: translated[0],
+      subTitle: translated[1],
+      footer: translated[2],
+      cards: sourceData.cards.map((card) => ({
+        token: String(card.token ?? ''),
+        target: String(card.target ?? ''),
+        percent: card.percent
+      }))
+    };
+    console.log(' ✅');
+  }
+
+  return result;
+}
+
+async function writeBackCoinPriceTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId, sourceLang = 'zh-CN') {
+  const sourceLangNormalized = String(sourceLang ?? '').trim().toLowerCase();
+  const langs = Object.keys(translationsMap)
+    .filter(lang => String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized);
+
+  if (langs.length === 0) return 0;
+
+  const MAX_CARDS = 3;
+  const totalColumns = 4 + (MAX_CARDS * 3); // A:lang B:title C:subtitle D:footer E~M:token/value/percent
+  const blankRow = Array.from({ length: totalColumns }, () => '');
+
+  const rows = langs.map((lang) => {
+    const d = translationsMap[lang];
+    const row = [
+      lang,
+      String(d.mainTitle ?? ''),
+      String(d.subTitle ?? ''),
+      String(d.footer ?? '')
+    ];
+    for (let i = 0; i < MAX_CARDS; i++) {
+      const card = d.cards?.[i];
+      row.push(
+        String(card?.token ?? ''),
+        String(card?.target ?? ''),
+        card?.percent ?? ''
+      );
+    }
+    while (row.length < totalColumns) row.push('');
+    return row;
+  });
+
+  const CLEAR_WINDOW_ROWS = 17; // rows 3..19
+  const paddedRows = Array.from({ length: CLEAR_WINDOW_ROWS }, (_, i) => rows[i] ?? blankRow);
+  const startRow = 3;
+  const endRow = startRow + paddedRows.length - 1;
+  const endCol = indexToColumnLabel(totalColumns - 1);
+  const range = `${sheetId}!A${startRow}:${endCol}${endRow}`;
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ valueRange: { range, values: paddedRows } })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`币价预测翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+
+  return rows.length;
+}
+
+// ── 足球赛事：从 Lark 读取主文案 + 3 场比赛 ─────────────────────
+// 表头示例：
+// lang | title | subtitle | footer | match1_home | match1_away | match1_date | ...
+// 可选：match1_link / match2_link / match3_link（优先用链接抓赔率）
+async function fetchFootballDataFromLark(config, accessToken, sheetId, sourceLang = 'zh-CN', sheetLabel = 'footballSheetId') {
+  const resolvedSheetId = String(sheetId ?? '').trim();
+  if (!resolvedSheetId) {
+    throw new Error(`lark.config.json 缺少 ${sheetLabel}`);
+  }
+
+  const spreadsheetToken = config.spreadsheetToken;
+  const range = encodeURIComponent(`${resolvedSheetId}!A1:Q60`);
+  const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark 足球赛事表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('足球赛事表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => cellToText(cell));
+  const rows = values.slice(1)
+    .map(row => row.map(cell => cellToText(cell)))
+    .filter(row => row.some(Boolean));
+
+  const sourceLangNormalized = String(sourceLang || 'zh-CN').trim().toLowerCase();
+  const sourceRow = rows.find(row => String(row[0] ?? '').trim().toLowerCase() === sourceLangNormalized)
+    ?? rows[0]
+    ?? [];
+
+  const getCell = (row, name, fallback = '') => {
+    const idx = findHeaderIndex(headers, [name]);
+    if (idx === -1) return fallback;
+    return String(row[idx] ?? '').trim() || fallback;
+  };
+
+  function getMatchLink(row, index) {
+    const candidates = [
+      `match${index}_link`,
+      `match${index}_slug`,
+      `match${index}_url`,
+      `link_${index}`,
+      `slug_${index}`,
+      `url_${index}`
+    ];
+    for (const key of candidates) {
+      const value = getCell(row, key);
+      if (value) return value;
+    }
+    return '';
+  }
+
+  const gamesRows = [];
+  for (let i = 1; i <= 3; i++) {
+    const homeTeam = getCell(sourceRow, `match${i}_home`);
+    const awayTeam = getCell(sourceRow, `match${i}_away`);
+    const matchDate = getCell(sourceRow, `match${i}_date`);
+    const homeWin = getCell(sourceRow, `match${i}_home_win`);
+    const awayWin = getCell(sourceRow, `match${i}_away_win`);
+
+    if (!homeTeam || !awayTeam) continue;
+
+    const matchLink = getMatchLink(sourceRow, i);
+    gamesRows.push({
+      date: matchDate,
+      home_team: homeTeam,
+      away_team: awayTeam,
+      polymarket_slug: normalizePolymarketInputSlug(matchLink),
+      home_win: String(homeWin).replace('%', '').trim(),
+      away_win: String(awayWin).replace('%', '').trim()
+    });
+  }
+
+  if (gamesRows.length === 0) {
+    throw new Error('足球赛事表格没有可用比赛数据（请检查 match1~match3 列）');
+  }
+
+  return {
+    sourceData: {
+      mainTitle: getCell(sourceRow, 'title'),
+      subTitle: getCell(sourceRow, 'subtitle'),
+      footer: getCell(sourceRow, 'footer')
+    },
+    gamesRows
+  };
+}
+
+// ── 足球赛事：仅翻译标题/副标题/footer（球队名来自 CSV）──
+async function translateFootballTitles(sourceData, targetLangs, fromLang = 'zh-CN') {
+  const texts = [sourceData.mainTitle, sourceData.subTitle, sourceData.footer];
+  const result = {};
+
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    result[lang] = {
+      mainTitle: translated[0],
+      subTitle: translated[1],
+      footer: translated[2]
+    };
+    console.log(' ✅');
+  }
+
+  return result;
+}
+
+// ── 足球赛事：回填翻译结果到 Lark（第 3 行起，A~D）──
+async function writeBackFootballTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId, sourceLang = 'zh-CN') {
+  const sourceLangNormalized = String(sourceLang ?? '').trim().toLowerCase();
+  const langs = Object.keys(translationsMap)
+    .filter(lang => String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized);
+
+  if (langs.length === 0) return 0;
+
+  const translatedRows = langs.map(lang => {
+    const d = translationsMap[lang] ?? {};
+    return [
+      lang,
+      String(d.mainTitle ?? ''),
+      String(d.subTitle ?? ''),
+      String(d.footer ?? '')
+    ];
+  });
+
+  const CLEAR_WINDOW_ROWS = 17; // rows 3..19
+  const blankRow = ['', '', '', ''];
+  const rows = Array.from({ length: CLEAR_WINDOW_ROWS }, (_, i) => translatedRows[i] ?? blankRow);
+  const startRow = 3;
+  const endRow = startRow + rows.length - 1;
+  const range = `${sheetId}!A${startRow}:D${endRow}`;
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ valueRange: { range, values: rows } })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`足球赛事翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+
+  return translatedRows.length;
+}
+
+function buildFootballPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig) {
+  const templateCopy = copyConfig?.football ?? {};
+  const defaultCopy = templateCopy?.default ?? {};
+  const langCopy = templateCopy?.[lang] ?? {};
+  const mergedCopy = { ...defaultCopy, ...langCopy };
+  const translated = translationsMap[lang] ?? sourceData ?? {};
+
+  const games = gamesRows.map((row) => {
+    const homeId = row.home_team;
+    const awayId = row.away_team;
+
+    if (!teamsMap[homeId]) {
+      warnOnce(`football-team-missing:${homeId}`, `足球球队 ID 不存在：${homeId}（home_team）`);
+    }
+    if (!teamsMap[awayId]) {
+      warnOnce(`football-team-missing:${awayId}`, `足球球队 ID 不存在：${awayId}（away_team）`);
+    }
+
+    const homeRaw = Number(row.home_win);
+    const awayRaw = Number(row.away_win);
+    const drawRaw = Number(row.draw_win);
+    const homeRate = Number.isFinite(homeRaw) ? Math.max(0, Math.min(100, Math.round(homeRaw))) : 0;
+    const awayRate = Number.isFinite(awayRaw) ? Math.max(0, Math.min(100, Math.round(awayRaw))) : 0;
+    const drawRate = Number.isFinite(drawRaw)
+      ? Math.max(0, Math.min(100, Math.round(drawRaw)))
+      : ((homeRate + awayRate) > 0 ? Math.max(0, 100 - homeRate - awayRate) : 0);
+
+    return {
+      matchDate: row.date,
+      homeTeam: {
+        name: teamsMap[homeId]?.[lang] ?? teamsMap[homeId]?.en ?? homeId,
+        logo: findLogoPath(homeId, teamsMap) ?? '',
+        winRate: homeRate
+      },
+      awayTeam: {
+        name: teamsMap[awayId]?.[lang] ?? teamsMap[awayId]?.en ?? awayId,
+        logo: findLogoPath(awayId, teamsMap) ?? '',
+        winRate: awayRate
+      },
+      drawRate
+    };
+  });
+
+  return {
+    games,
+    copy: {
+      title: String(translated.mainTitle ?? mergedCopy.title ?? '').trim(),
+      subtitle: String(translated.subTitle ?? mergedCopy.subtitle ?? '').trim(),
+      footer: String(translated.footer ?? mergedCopy.footer ?? '').trim(),
+      titleFontSize: Number(mergedCopy.titleFontSize ?? 110),
+      titleLineHeight: Number(mergedCopy.titleLineHeight ?? 1.2),
+      titleMaxWidth: Number(mergedCopy.titleMaxWidth ?? 824),
+      subtitleFontSize: Number(mergedCopy.subtitleFontSize ?? 46),
+      subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3)
+    }
+  };
+}
+
+function resolveCoinLogoPath(token, templateConfig) {
+  const logosDir = String(templateConfig?.logosDir ?? '').trim();
+  if (!logosDir) return '';
+  const baseToken = String(token ?? '').trim();
+  if (!baseToken) return '';
+
+  const normalized = baseToken.replace(/\s+/g, '');
+  const candidates = [
+    normalized,
+    normalized.toUpperCase(),
+    normalized.toLowerCase()
+  ];
+  const exts = ['.png', '.jpg', '.jpeg', '.webp'];
+  for (const name of candidates) {
+    for (const ext of exts) {
+      const absolute = path.join(logosDir, `${name}${ext}`);
+      if (fs.existsSync(absolute)) {
+        return `file://${absolute}`;
+      }
+    }
+  }
+  return '';
+}
+
+function formatCoinTargetValue(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  const normalized = raw.replace(/,/g, '');
+  if (!/^[-+]?\d+(\.\d+)?$/.test(normalized)) {
+    return raw;
+  }
+
+  const [intPart, decimalPart] = normalized.split('.');
+  const sign = intPart.startsWith('-') ? '-' : '';
+  const absoluteInt = intPart.replace(/^[-+]/, '');
+  const groupedInt = absoluteInt.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return decimalPart ? `${sign}${groupedInt}.${decimalPart}` : `${sign}${groupedInt}`;
+}
+
+function buildCoinPricePosterPayload(sourceData, translationsMap, lang, templateConfig) {
+  const translated = translationsMap[lang] ?? sourceData;
+  const outcomeLabel = 'Yes';
+
+  return {
+    games: (translated.cards ?? sourceData.cards).map((card) => {
+      const formattedTarget = formatCoinTargetValue(card.target);
+      const logo = resolveCoinLogoPath(card.token, templateConfig);
+      return {
+        date: '',
+        homeTeam: {
+          name: String(card.token ?? ''),
+          logo,
+          winRate: Number(card.percent ?? 50)
+        },
+        awayTeam: {
+          name: formattedTarget,
+          logo: '',
+          winRate: Math.max(0, 100 - Number(card.percent ?? 50))
+        }
+      };
+    }),
+    copy: {
+      title: String(translated.mainTitle ?? '').trim(),
+      subtitle: String(translated.subTitle ?? '').trim(),
+      footer: String(translated.footer ?? '').trim(),
+      outcomeLabel,
+      titleFontSize: 110,
+      titleLineHeight: 1.2,
+      titleMaxWidth: 824,
+      subtitleFontSize: 46,
+      subtitleLineHeight: 1.3,
+      cardTextFontSize: 60,
+      cardTextLineHeight: 1.2,
+      cards: (translated.cards ?? sourceData.cards).map((card) => ({
+        text: formatCoinTargetValue(card.target),
+        image: resolveCoinLogoPath(card.token, templateConfig),
+        valueLabel: outcomeLabel
+      }))
+    }
+  };
 }
 
 // ── 综合事件：翻译结果回填到 Lark 表格（第 3 行起，仅回填非源语言）──
@@ -2198,6 +3150,7 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
   // Use translation for this lang; fall back to source (zh-CN) data
   const translated = translationsMap[lang] ?? sourceData;
 
+  const COMPREHENSIVE_LOGO_DIR = path.join(BASE_DIR, 'assets', 'logos', '综合事件');
   const WORLD_CUP_LOGO_DIR = path.join(BASE_DIR, 'assets', 'logos', '足球赛事', '世界杯');
   const SUPPORTED_EXTS = ['.png', '.jpg', '.jpeg', '.webp'];
   const worldCupLogoFiles = (templateKey === 'worldcup' && fs.existsSync(WORLD_CUP_LOGO_DIR))
@@ -2224,6 +3177,20 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
     return fallback ? `file://${path.join(WORLD_CUP_LOGO_DIR, fallback)}` : '';
   }
 
+  function resolveComprehensiveLogoPath(index = 0) {
+    if (templateKey !== 'comprehensive') return '';
+    if (!fs.existsSync(COMPREHENSIVE_LOGO_DIR)) return '';
+
+    const slot = String(index + 1);
+    for (const ext of SUPPORTED_EXTS) {
+      const candidate = path.join(COMPREHENSIVE_LOGO_DIR, `${slot}${ext}`);
+      if (fs.existsSync(candidate)) {
+        return `file://${candidate}`;
+      }
+    }
+    return '';
+  }
+
   return {
     games: sourceData.cards.map(card => ({
       date: '',
@@ -2240,14 +3207,16 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
       titleMaxWidth: Number(mergedCopy.titleMaxWidth ?? 824),
       subtitleFontSize: Number(mergedCopy.subtitleFontSize ?? 46),
       subtitleLineHeight: Number(mergedCopy.subtitleLineHeight ?? 1.3),
-      cardTextFontSize: Number(mergedCopy.cardTextFontSize ?? 40),
+      cardTextFontSize: templateKey === 'worldcup'
+        ? 60
+        : Number(mergedCopy.cardTextFontSize ?? 40),
       cardTextLineHeight: Number(mergedCopy.cardTextLineHeight ?? 1.2),
       cards: (translated.cards ?? sourceData.cards).map((card, i) => ({
-        text: String(card.text ?? '').trim(),
+        text: sanitizeCardText(card.text),
         image: templateKey === 'worldcup'
           ? (String(sourceData.cards?.[i]?.image ?? '').trim()
             || resolveWorldCupLogoPath(sourceData.cards?.[i]?.text ?? card.text, i))
-          : String(defaultCopy.cards?.[i]?.image ?? '').trim(),
+          : (resolveComprehensiveLogoPath(i) || String(defaultCopy.cards?.[i]?.image ?? '').trim()),
         valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
       }))
     }
@@ -2538,6 +3507,188 @@ async function main() {
     return;
   }
 
+  // ── 足球赛事流程（Lark 文案 + 搜赔率 + 自动翻译回填）──
+  if (templateKey === 'football') {
+    const larkConfig = loadLarkConfig();
+    const sourceLang = larkConfig.sourceLang || 'zh-CN';
+    const sheetId = String(larkConfig.footballSheetId || templateConfig.larkSheet || '').trim();
+
+    console.log('\n从 Lark 足球赛事表格拉取数据...');
+    const accessToken = await getLarkTenantAccessToken(larkConfig);
+    const { sourceData, gamesRows: rawGamesRows } = await fetchFootballDataFromLark(
+      larkConfig,
+      accessToken,
+      sheetId,
+      sourceLang,
+      'footballSheetId'
+    );
+    console.log(`  ✅ 已读取足球赛事数据（${rawGamesRows.length} 场）`);
+
+    const teamsMap = loadTeams(templateConfig.teamsCsv || FOOTBALL_TEAMS_CSV);
+    let gamesRows = normalizeGameRowsTeamIds(rawGamesRows, teamsMap);
+    const { rows: enrichedRows, enrichedCount, autoMatchedCount } = await enrichRowsWithPolymarketOdds(
+      gamesRows,
+      teamsMap,
+      { sport: 'football', strictNotFound: false, includeDraw: true }
+    );
+    gamesRows = enrichedRows;
+
+    if (enrichedCount > 0) {
+      console.log(`  ✅ 已从 Polymarket 自动更新 ${enrichedCount} 场赔率`);
+    }
+    if (autoMatchedCount > 0) {
+      console.log(`  ✅ 其中 ${autoMatchedCount} 场由主客队+日期自动匹配到 Polymarket 市场`);
+    }
+
+    const bgDir = templateConfig.bgDir || WORLD_CUP_BG_DIR;
+    const bgFiles = scanBgFiles(bgDir);
+    const langBgMap = Object.fromEntries(bgFiles.map(file => [path.parse(file).name, file]));
+    const langsToGenerate = Object.keys(langBgMap).filter(lang => lang !== 'bg');
+    const targetLangs = langsToGenerate.filter(lang => lang !== sourceLang);
+
+    let translationsMap = { [sourceLang]: sourceData };
+    if (targetLangs.length > 0) {
+      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
+      const translated = await translateFootballTitles(sourceData, targetLangs, sourceLang);
+      translationsMap = { ...translationsMap, ...translated };
+
+      console.log('\n回填翻译结果到 Lark 表格...');
+      const writtenCount = await writeBackFootballTranslationsToLark(
+        sourceData,
+        translationsMap,
+        accessToken,
+        larkConfig.spreadsheetToken,
+        sheetId,
+        sourceLang
+      );
+      console.log(`  ✅ 已回填 ${writtenCount} 种语言（第 3 行起，A 列为语言代码）`);
+    }
+
+    const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
+    const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
+
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
+
+    console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+    for (const lang of langsToGenerate) {
+      const bgFile = langBgMap[lang];
+      const bgPath = bgFile ? path.join(bgDir, bgFile) : '';
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const posterPayload = buildFootballPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+    }
+
+    await browser.close();
+    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(lang => `${lang}.png`));
+    return;
+  }
+
+  // ── 全球预测市场流程（Lark 文案 + 自动翻译 + 多语种背景）──
+  if (templateKey === 'coinprice') {
+    const larkConfig = loadLarkConfig();
+    const sourceLang = larkConfig.sourceLang || 'zh-CN';
+    const sheetId = String(larkConfig.coinPriceSheetId || templateConfig.larkSheet || '').trim();
+
+    console.log('\n从 Lark 币价预测表格拉取数据...');
+    const accessToken = await getLarkTenantAccessToken(larkConfig);
+    const sourceData = await fetchCoinPriceDataFromLark(larkConfig, accessToken, sheetId, sourceLang, 'coinPriceSheetId');
+    console.log(`  ✅ 已读取币价预测卡片数据（${sourceData.cards.length} 张）`);
+
+    const bgDir = templateConfig.bgDir || GLOBAL_BG_DIR;
+    const bgFiles = scanBgFiles(bgDir);
+    const targetLangs = bgFiles.map(f => path.parse(f).name).filter(l => l !== sourceLang);
+
+    let translationsMap = { [sourceLang]: sourceData };
+    if (targetLangs.length > 0) {
+      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')})...`);
+      const translated = await translateCoinPriceData(sourceData, targetLangs, sourceLang);
+      translationsMap = { ...translationsMap, ...translated };
+
+      console.log('\n回填翻译结果到 Lark 表格...');
+      const writtenCount = await writeBackCoinPriceTranslationsToLark(
+        sourceData,
+        translationsMap,
+        accessToken,
+        larkConfig.spreadsheetToken,
+        sheetId,
+        sourceLang
+      );
+      console.log(`  ✅ 已回填 ${writtenCount} 种语言`);
+    }
+
+    const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
+    const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
+
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
+
+    console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
+    for (const bgFile of bgFiles) {
+      const lang = path.parse(bgFile).name;
+      const bgPath = path.join(bgDir, bgFile);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const payload = buildCoinPricePosterPayload(sourceData, translationsMap, lang, templateConfig);
+      await generatePoster(page, htmlTemplate, payload, bgPath, outputPath);
+    }
+
+    await browser.close();
+    buildZip(dateDir, outputPrefixWithDate, bgFiles);
+    return;
+  }
+
+  // ── 全球预测市场流程（Lark 文案 + 自动翻译 + 多语种背景）──
+  if (templateKey === 'global') {
+    const larkConfig = loadLarkConfig();
+    const sourceLang = larkConfig.sourceLang || 'zh-CN';
+    const sheetId = String(larkConfig.globalSheetId || templateConfig.larkSheet || '').trim();
+
+    console.log('\n从 Lark 全球预测市场表格拉取数据...');
+    const accessToken = await getLarkTenantAccessToken(larkConfig);
+    const sourceCards = await fetchGlobalCardsFromLark(larkConfig, accessToken, sheetId, 'globalSheetId');
+    console.log(`  ✅ 已读取全球预测市场卡片数据（${sourceCards.length} 张）`);
+
+    const bgDir = templateConfig.bgDir || GLOBAL_BG_DIR;
+    const bgFiles = scanBgFiles(bgDir);
+    const targetLangs = bgFiles.map(f => path.parse(f).name).filter(l => l !== sourceLang);
+
+    let cardsByLang = { [sourceLang]: sourceCards };
+    if (targetLangs.length > 0) {
+      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
+      const translated = await translateGlobalCards(sourceCards, targetLangs, sourceLang);
+      cardsByLang = { ...cardsByLang, ...translated };
+    }
+
+    const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
+    const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
+
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
+
+    console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
+    for (const bgFile of bgFiles) {
+      const lang = path.parse(bgFile).name;
+      const bgPath = path.join(bgDir, bgFile);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const cards = cardsByLang[lang] || sourceCards;
+      const payload = buildGlobalPosterPayload(cards, templateConfig);
+      await generatePoster(page, htmlTemplate, payload, bgPath, outputPath);
+    }
+
+    await browser.close();
+    buildZip(dateDir, outputPrefixWithDate, bgFiles);
+    return;
+  }
+
   // ── 综合事件/世界杯流程 ───────────────────────────────────
   if (templateKey === 'comprehensive' || templateKey === 'worldcup') {
     const larkConfig = loadLarkConfig();
@@ -2611,7 +3762,9 @@ async function main() {
   let gamesRows = sheetData.rows;
   console.log(`  ✅ 共 ${gamesRows.length} 场比赛`);
 
-  const teamsMap  = loadTeams(TEAMS_CSV);
+  const teamsCsvPath = templateConfig.teamsCsv || TEAMS_CSV;
+  const teamsMap  = loadTeams(teamsCsvPath);
+  gamesRows = normalizeGameRowsTeamIds(gamesRows, teamsMap);
   const { rows: enrichedRows, enrichedCount, autoMatchedCount } = await enrichRowsWithPolymarketOdds(gamesRows, teamsMap);
   gamesRows = enrichedRows;
   if (enrichedCount > 0) {
@@ -2629,7 +3782,8 @@ async function main() {
   validateWinRates(gamesRows);
   const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
 
-  const bgFiles = scanBgFiles();
+  const bgDir = templateConfig.bgDir || BG_DIR;
+  const bgFiles = scanBgFiles(bgDir);
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
   const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
@@ -2641,7 +3795,7 @@ async function main() {
   console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
   for (const bgFile of bgFiles) {
     const lang = path.parse(bgFile).name;
-    const bgPath = path.join(BG_DIR, bgFile);
+    const bgPath = path.join(bgDir, bgFile);
     const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
     const posterPayload = buildPosterPayload(gamesRows, teamsMap, lang, templateKey, copyConfig);
     await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);

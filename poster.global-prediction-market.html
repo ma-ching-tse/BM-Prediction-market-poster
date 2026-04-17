@@ -143,16 +143,96 @@
   <script>
     const PREVIEW_DATA = {
       bgImagePath: '',
-      cards: [
-        { icon: 'assets/logos/全球预测市场/1.png', title: '加密风云', stat: '500+', desc: '热门币种与事件' },
-        { icon: 'assets/logos/全球预测市场/2.png', title: '体育热点', stat: '200+', desc: '全球赛事预测'   },
-        { icon: 'assets/logos/全球预测市场/3.png', title: '政治风向', stat: '100+', desc: '热门政治话题'   }
-      ]
+      cards: []
     };
 
     const payload = window.GAMES_DATA || PREVIEW_DATA;
-    const cards   = Array.isArray(payload?.cards) ? payload.cards : [];
     const bgPath  = String(payload?.bgImagePath || window.BG_PATH || '').trim();
+
+    const DEFAULT_CARD_ICONS = [
+      'assets/logos/全球预测市场/1.png',
+      'assets/logos/全球预测市场/2.png',
+      'assets/logos/全球预测市场/3.png'
+    ];
+    const DEFAULT_CARD_STATS = ['500+', '200+', '100+'];
+    const CARD_COPY_BY_LANG = {
+      'zh-CN': [
+        { title: '加密风云', desc: '热门币种与事件' },
+        { title: '体育热点', desc: '全球赛事预测' },
+        { title: '政治风向', desc: '热门政治话题' }
+      ],
+      'zh-TW': [
+        { title: '加密風雲', desc: '熱門幣種與事件' },
+        { title: '體育熱點', desc: '全球賽事預測' },
+        { title: '政治風向', desc: '熱門政治話題' }
+      ],
+      en: [
+        { title: 'Crypto Trends', desc: 'Top Coins & Events' },
+        { title: 'Sports Buzz', desc: 'Global Match Forecasts' },
+        { title: 'Political Pulse', desc: 'Trending Political Topics' }
+      ],
+      de: [
+        { title: 'Krypto-Trends', desc: 'Top-Coins und Ereignisse' },
+        { title: 'Sport-Highlights', desc: 'Prognosen für globale Spiele' },
+        { title: 'Politik-Kompass', desc: 'Aktuelle politische Themen' }
+      ],
+      fr: [
+        { title: 'Tendance Crypto', desc: 'Coins et événements phares' },
+        { title: 'Tendance Sport', desc: 'Prévisions des matchs mondiaux' },
+        { title: 'Cap Politique', desc: 'Sujets politiques tendance' }
+      ],
+      es: [
+        { title: 'Tendencia Cripto', desc: 'Monedas y eventos en tendencia' },
+        { title: 'Pulso Deportivo', desc: 'Pronósticos de eventos globales' },
+        { title: 'Brújula Política', desc: 'Temas políticos en tendencia' }
+      ],
+      pt: [
+        { title: 'Tendência Cripto', desc: 'Moedas e eventos em alta' },
+        { title: 'Destaques Esportivos', desc: 'Previsões de eventos globais' },
+        { title: 'Rumo Político', desc: 'Tópicos políticos em alta' }
+      ],
+      vi: [
+        { title: 'Xu hướng Crypto', desc: 'Coin và sự kiện nổi bật' },
+        { title: 'Tiêu điểm Thể thao', desc: 'Dự đoán sự kiện toàn cầu' },
+        { title: 'Nhịp đập Chính trị', desc: 'Chủ đề chính trị nổi bật' }
+      ],
+      ja: [
+        { title: '暗号資産トレンド', desc: '注目コインとイベント' },
+        { title: 'スポーツ注目', desc: '世界の試合予測' },
+        { title: '政治トレンド', desc: '注目の政治トピック' }
+      ]
+    };
+
+    function detectLang() {
+      const fromPayload = String(payload?.lang || '').trim();
+      if (fromPayload) return fromPayload;
+      const fileName = bgPath.split('/').pop() || '';
+      const dot = fileName.lastIndexOf('.');
+      return dot > 0 ? fileName.slice(0, dot) : 'zh-CN';
+    }
+
+    function normalizeLang(rawLang) {
+      const lang = String(rawLang || '').trim();
+      const lowered = lang.toLowerCase();
+      if (lowered === 'zh-cn') return 'zh-CN';
+      if (lowered === 'zh-tw') return 'zh-TW';
+      return lowered;
+    }
+
+    function buildFallbackCards(langKey) {
+      const copy = CARD_COPY_BY_LANG[langKey] || CARD_COPY_BY_LANG['zh-CN'];
+      return copy.map((item, i) => ({
+        icon: DEFAULT_CARD_ICONS[i],
+        stat: DEFAULT_CARD_STATS[i],
+        title: item.title,
+        desc: item.desc
+      }));
+    }
+
+    const payloadCards = Array.isArray(payload?.cards) ? payload.cards : [];
+    const cards = payloadCards.length > 0
+      ? payloadCards
+      : buildFallbackCards(normalizeLang(detectLang()));
 
     // ── 背景图 ───────────────────────────────────────────
     const bgImg = document.getElementById('bg-image');
