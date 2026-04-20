@@ -1,4 +1,3 @@
-date,home_team,home_win,away_team,away_win
-2026-04-06,celtics,24,clippers,58
-2026-04-20,nets,24,nuggets,58
-2026-04-20,cavaliers,24,knicks,58
+lang,title,subtitle,footer,match1_link,match1_home,match1_away,match1_date,match1_home_win,match1_away_win,match2_link,match2_home,match2_away,match2_date,match2_home_win,match2_away_win,match3_link,match3_home,match3_away,match3_date,match3_home_win,match3_away_win
+zh-CN,今日焦点赛事,按链接自动解析主客队和赔率,查看产品：交易-预测市场,,,,,,,,,,,,,,,,,,
+en,Trending Matchups,Auto-filled from translated copy,View Product: Trade - Prediction Market,,,,,,,,,,,,,,,,,,

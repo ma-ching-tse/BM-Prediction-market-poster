@@ -2,29 +2,80 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 const MAX_SIZE_KB = 300;
 const POLYMARKET_BASE_URL = 'https://gamma-api.polymarket.com';
+const OUTPUT_SIZE = 900;
+const PNG_COLOR_CANDIDATES = [256, 224, 192, 160, 128, 112, 96, 80, 64, 48, 32];
 
-// ── 压缩图片到目标大小以内（JPEG 二分查找质量参数）──
-async function compressToTarget(inputPath, outputPath, maxKB = MAX_SIZE_KB) {
-  let lo = 20, hi = 90, bestQuality = 60;
-  // 先快速测试最高质量，如果已经够小就直接用
-  for (let i = 0; i < 6; i++) {
-    const quality = Math.round((lo + hi) / 2);
-    const buf = await sharp(inputPath).jpeg({ quality }).toBuffer();
-    const sizeKB = buf.length / 1024;
-    if (sizeKB <= maxKB) {
-      bestQuality = quality;
-      lo = quality + 1; // 尝试更高质量
-    } else {
-      hi = quality - 1; // 降低质量
+function runFfmpeg(args) {
+  execFileSync('ffmpeg', args, {
+    stdio: 'ignore'
+  });
+}
+
+// ── ffmpeg 方案：缩放到 900x900，并通过调色板压缩 PNG ───────────
+function compressPngWithFfmpeg(inputPath, outputPath, maxKB = MAX_SIZE_KB) {
+  const outputDir = path.dirname(outputPath);
+  const stem = path.basename(outputPath, path.extname(outputPath));
+  const palettePath = path.join(outputDir, `${stem}__palette.png`);
+  const candidatePath = path.join(outputDir, `${stem}__candidate.png`);
+
+  let bestSizeKB = Number.POSITIVE_INFINITY;
+  let bestColors = PNG_COLOR_CANDIDATES[PNG_COLOR_CANDIDATES.length - 1];
+  let foundUnderLimit = false;
+
+  try {
+    for (const colors of PNG_COLOR_CANDIDATES) {
+      runFfmpeg([
+        '-y',
+        '-i', inputPath,
+        '-vf', `scale=${OUTPUT_SIZE}:${OUTPUT_SIZE}:flags=lanczos,palettegen=max_colors=${colors}:stats_mode=full`,
+        palettePath
+      ]);
+
+      runFfmpeg([
+        '-y',
+        '-i', inputPath,
+        '-i', palettePath,
+        '-lavfi', `scale=${OUTPUT_SIZE}:${OUTPUT_SIZE}:flags=lanczos[x];[x][1:v]paletteuse=dither=sierra2_4a`,
+        '-frames:v', '1',
+        '-c:v', 'png',
+        '-compression_level', '9',
+        candidatePath
+      ]);
+
+      const sizeKB = Math.round(fs.statSync(candidatePath).size / 1024);
+      if (sizeKB < bestSizeKB) {
+        bestSizeKB = sizeKB;
+        bestColors = colors;
+        fs.copyFileSync(candidatePath, outputPath);
+      }
+
+      if (sizeKB <= maxKB) {
+        foundUnderLimit = true;
+        bestSizeKB = sizeKB;
+        bestColors = colors;
+        fs.copyFileSync(candidatePath, outputPath);
+        break;
+      }
     }
+  } catch (err) {
+    throw new Error(`ffmpeg 压缩失败：${err.message}`);
+  } finally {
+    if (fs.existsSync(palettePath)) fs.unlinkSync(palettePath);
+    if (fs.existsSync(candidatePath)) fs.unlinkSync(candidatePath);
   }
-  await sharp(inputPath).jpeg({ quality: bestQuality }).toFile(outputPath);
-  const finalKB = Math.round(fs.statSync(outputPath).size / 1024);
-  return { quality: bestQuality, sizeKB: finalKB };
+
+  if (!fs.existsSync(outputPath)) {
+    throw new Error(`ffmpeg 压缩失败：未生成输出文件 ${path.basename(outputPath)}`);
+  }
+
+  return {
+    sizeKB: bestSizeKB,
+    profile: `${foundUnderLimit ? 'within-limit' : 'best-effort'}/c${bestColors}`
+  };
 }
 
 const BASE_DIR = __dirname;
@@ -460,6 +511,12 @@ function findHeaderIndex(headers, candidates) {
   return -1;
 }
 
+function getCellByHeaderAliases(headers, row, candidates, fallback = '') {
+  const index = findHeaderIndex(headers, candidates);
+  if (index === -1) return fallback;
+  return String(row[index] ?? '').trim() || fallback;
+}
+
 function parseGamesFromSheetRows(values, options = {}) {
   if (!Array.isArray(values) || values.length < 2) {
     throw new Error('Lark 表格里没有可用数据，至少需要 1 行表头和 1 行内容');
@@ -475,6 +532,19 @@ function parseGamesFromSheetRows(values, options = {}) {
   const optionalHeaderAliases = {
     home_win: ['home_win', 'home win', '主队胜率', '主胜率'],
     away_win: ['away_win', 'away win', '客队胜率', '客胜率'],
+    polymarket_url: [
+      'polymarket_url',
+      'polymarket url',
+      'polymarket_link',
+      'polymarket link',
+      'market_url',
+      'market url',
+      'match_link',
+      'match link',
+      '链接',
+      'polymarket链接',
+      'polymarket网址'
+    ],
     polymarket_slug: ['polymarket_slug', 'polymarket slug', 'market_slug', 'market slug', 'slug', '赔率slug'],
     home_outcome: ['home_outcome', 'home outcome', '主队outcome', '主队 outcome'],
     away_outcome: ['away_outcome', 'away outcome', '客队outcome', '客队 outcome']
@@ -504,6 +574,7 @@ function parseGamesFromSheetRows(values, options = {}) {
       away_team: item.row[indexes.away_team] ?? '',
       home_win: String(item.row[indexes.home_win] ?? '').replace('%', '').trim(),
       away_win: String(item.row[indexes.away_win] ?? '').replace('%', '').trim(),
+      polymarket_url: String(item.row[indexes.polymarket_url] ?? '').trim(),
       polymarket_slug: String(item.row[indexes.polymarket_slug] ?? '').trim(),
       home_outcome: String(item.row[indexes.home_outcome] ?? '').trim(),
       away_outcome: String(item.row[indexes.away_outcome] ?? '').trim(),
@@ -585,6 +656,8 @@ async function updateLarkCellValue({ accessToken, spreadsheetToken, sheetId, a1C
 async function writeBackWinRatesToLark(rows, headerIndexes, larkContext) {
   const homeWinCol = headerIndexes.home_win;
   const awayWinCol = headerIndexes.away_win;
+  const polymarketUrlCol = headerIndexes.polymarket_url;
+  const polymarketSlugCol = headerIndexes.polymarket_slug;
 
   if (!Number.isInteger(homeWinCol) || !Number.isInteger(awayWinCol)) {
     throw new Error('Lark 表格缺少 home_win / away_win 列，无法回填赔率');
@@ -610,6 +683,28 @@ async function writeBackWinRatesToLark(rows, headerIndexes, larkContext) {
       a1Cell: `${awayColA1}${rowNumber}`,
       value: formatPercentForSheet(row.away_win)
     });
+
+    if (Number.isInteger(polymarketUrlCol) && row.__shouldWritePolymarketUrlBack && String(row.__resolvedPolymarketUrl ?? '').trim()) {
+      const polymarketUrlColA1 = indexToColumnLabel(larkContext.rangeStart.col + polymarketUrlCol);
+      await updateLarkCellValue({
+        accessToken: larkContext.accessToken,
+        spreadsheetToken: larkContext.spreadsheetToken,
+        sheetId: larkContext.sheetId,
+        a1Cell: `${polymarketUrlColA1}${rowNumber}`,
+        value: row.__resolvedPolymarketUrl
+      });
+    }
+
+    if (Number.isInteger(polymarketSlugCol) && row.__shouldWritePolymarketSlugBack && String(row.__resolvedPolymarketSlug ?? '').trim()) {
+      const polymarketSlugColA1 = indexToColumnLabel(larkContext.rangeStart.col + polymarketSlugCol);
+      await updateLarkCellValue({
+        accessToken: larkContext.accessToken,
+        spreadsheetToken: larkContext.spreadsheetToken,
+        sheetId: larkContext.sheetId,
+        a1Cell: `${polymarketSlugColA1}${rowNumber}`,
+        value: row.__resolvedPolymarketSlug
+      });
+    }
   }
 
   return updatedRows.length;
@@ -1245,6 +1340,28 @@ function buildGamesData(gamesRows, teamsMap, lang) {
   });
 }
 
+function buildClassicPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig) {
+  const templateCopy = copyConfig?.classic ?? {};
+  const defaultCopy = templateCopy?.default ?? {};
+  const langCopy = templateCopy?.[lang] ?? {};
+  const mergedCopy = { ...defaultCopy, ...langCopy };
+  const translated = translationsMap?.[lang] ?? sourceData ?? {};
+
+  return {
+    games: buildGamesData(gamesRows, teamsMap, lang),
+    copy: {
+      title: String(translated.mainTitle ?? '').trim(),
+      subtitle: String(translated.subTitle ?? '').trim(),
+      footer: String(translated.footer ?? '').trim(),
+      titleFontSize: Number(mergedCopy?.titleFontSize ?? 86),
+      titleLineHeight: Number(mergedCopy?.titleLineHeight ?? 1.15),
+      titleMaxWidth: Number(mergedCopy?.titleMaxWidth ?? 860),
+      subtitleFontSize: Number(mergedCopy?.subtitleFontSize ?? 46),
+      subtitleLineHeight: Number(mergedCopy?.subtitleLineHeight ?? 1.3)
+    }
+  };
+}
+
 function buildPosterPayload(gamesRows, teamsMap, lang, templateKey, copyConfig) {
   const templateCopy = copyConfig?.[templateKey] ?? {};
   const defaultCopy = templateCopy?.default ?? {};
@@ -1305,6 +1422,437 @@ function validateWinRates(gamesRows) {
     const detail = errors.map(e => `- ${e}`).join('\n');
     throw new Error(`胜率校验失败（home_win + away_win 必须等于 100）：\n${detail}`);
   }
+}
+
+// ── Classic NBA：从 Lark 读取主文案 + 3 场比赛 URL ─────────────────
+async function fetchClassicDataFromLark(config, accessToken, sourceLang = 'zh-CN') {
+  const spreadsheetToken = await resolveSpreadsheetToken(config, accessToken);
+  const sheetId = await resolveSheetId(config, accessToken, spreadsheetToken);
+  const sheetName = await resolveSheetName(config, accessToken, spreadsheetToken, sheetId);
+  const range = `${sheetId}!A1:Q60`;
+  const url = new URL(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${encodeURIComponent(range)}`);
+  url.searchParams.set('valueRenderOption', 'ToString');
+  url.searchParams.set('dateTimeRenderOption', 'FormattedString');
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`Lark NBA 表格读取失败：${data.msg || res.status}`);
+  }
+
+  const values = data.data?.valueRange?.values ?? [];
+  if (values.length < 2) {
+    throw new Error('NBA 表格没有可用数据，至少需要 1 行表头和 1 行内容');
+  }
+
+  const headers = values[0].map(cell => cellToText(cell));
+  const rows = values.slice(1)
+    .map((row, rowOffset) => ({
+      values: row.map(cell => cellToText(cell)),
+      rowNumber: 2 + rowOffset
+    }))
+    .filter(item => item.values.some(Boolean));
+
+  const langCol = findHeaderIndex(headers, ['lang', 'language', '语言']);
+  const sourceLangNormalized = String(sourceLang || 'zh-CN').trim().toLowerCase();
+  const sourceRowEntry = rows.find(item => String(item.values[langCol] ?? '').trim().toLowerCase() === sourceLangNormalized)
+    ?? rows[0];
+
+  if (!sourceRowEntry) {
+    throw new Error('NBA 表格没有可用源语言行');
+  }
+
+  const sourceRow = sourceRowEntry.values;
+
+  function getField(...aliases) {
+    return getCellByHeaderAliases(headers, sourceRow, aliases);
+  }
+
+  function getMatchLink(index) {
+    return getField(
+      `match${index}_link`,
+      `match${index}_url`,
+      `match${index}_slug`,
+      `match_${index}_link`,
+      `match_${index}_url`,
+      `match_${index}_slug`,
+      `link_${index}`,
+      `url_${index}`,
+      `slug_${index}`
+    );
+  }
+
+  const matchInputs = [];
+  for (let i = 1; i <= 3; i++) {
+    const link = getMatchLink(i);
+    if (!link) continue;
+    matchInputs.push({
+      index: i,
+      polymarket_url: link
+    });
+  }
+
+  if (matchInputs.length === 0) {
+    throw new Error('NBA 表格没有可用比赛链接（请检查 match1_link ~ match3_link 列）');
+  }
+
+  const headerIndexes = {};
+  const fieldAliases = {
+    title: ['title', 'main title', 'main_title', 'mian title', 'mian_title'],
+    subtitle: ['subtitle', 'sub title', 'sub_title'],
+    footer: ['footer', 'foot'],
+    match1_home: ['match1_home', 'match_1_home'],
+    match1_away: ['match1_away', 'match_1_away'],
+    match1_date: ['match1_date', 'match_1_date'],
+    match1_home_win: ['match1_home_win', 'match_1_home_win'],
+    match1_away_win: ['match1_away_win', 'match_1_away_win'],
+    match2_home: ['match2_home', 'match_2_home'],
+    match2_away: ['match2_away', 'match_2_away'],
+    match2_date: ['match2_date', 'match_2_date'],
+    match2_home_win: ['match2_home_win', 'match_2_home_win'],
+    match2_away_win: ['match2_away_win', 'match_2_away_win'],
+    match3_home: ['match3_home', 'match_3_home'],
+    match3_away: ['match3_away', 'match_3_away'],
+    match3_date: ['match3_date', 'match_3_date'],
+    match3_home_win: ['match3_home_win', 'match_3_home_win'],
+    match3_away_win: ['match3_away_win', 'match_3_away_win']
+  };
+
+  for (const [key, aliases] of Object.entries(fieldAliases)) {
+    const index = findHeaderIndex(headers, aliases);
+    if (index !== -1) headerIndexes[key] = index;
+  }
+
+  return {
+    sourceData: {
+      mainTitle: getField('title', 'main title', 'main_title', 'mian title', 'mian_title'),
+      subTitle: getField('subtitle', 'sub title', 'sub_title'),
+      footer: getField('footer', 'foot')
+    },
+    matchInputs,
+    headerIndexes,
+    larkContext: {
+      accessToken,
+      spreadsheetToken,
+      sheetId,
+      sheetName
+    },
+    sourceRowNumber: sourceRowEntry.rowNumber
+  };
+}
+
+function coerceDateToYMD(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  const direct = parseDateYMD(raw);
+  if (direct) return direct;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+
+  const y = parsed.getUTCFullYear();
+  const m = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function resolveTeamIdFromTextSegment(text, teamsMap) {
+  const normalizedText = normalizeOutcomeToken(text);
+  if (!normalizedText) return '';
+
+  let best = { teamId: '', score: 0 };
+  for (const [teamId, team] of Object.entries(teamsMap)) {
+    const candidates = [
+      teamId,
+      team.logo,
+      team.en,
+      team['zh-CN'],
+      team['zh-TW'],
+      team.ja
+    ];
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const normalizedCandidate = normalizeOutcomeToken(candidate);
+      if (!normalizedCandidate) continue;
+
+      if (normalizedText.includes(normalizedCandidate) || normalizedCandidate.includes(normalizedText)) {
+        if (normalizedCandidate.length > best.score) {
+          best = { teamId, score: normalizedCandidate.length };
+        }
+      }
+
+      const parts = String(candidate).trim().split(/\s+/);
+      if (parts.length > 1) {
+        const tail = normalizeOutcomeToken(parts[parts.length - 1]);
+        if (tail && normalizedText.includes(tail) && tail.length > best.score) {
+          best = { teamId, score: tail.length };
+        }
+      }
+    }
+  }
+
+  return best.teamId;
+}
+
+function extractTeamIdsFromMatchQuestion(question, teamsMap) {
+  const raw = String(question ?? '').trim();
+  if (!raw) return [];
+
+  const parts = raw.split(/\bvs\.?\b/i);
+  if (parts.length < 2) return [];
+
+  const leftRaw = parts[0]
+    .replace(/^who\s+will\s+win[:\s-]*/i, '')
+    .replace(/^will\s+/i, '')
+    .trim();
+  const rightRaw = parts.slice(1).join(' ')
+    .replace(/\bon\b.+$/i, '')
+    .replace(/\?+$/g, '')
+    .trim();
+
+  const leftId = resolveTeamIdFromTextSegment(leftRaw, teamsMap);
+  const rightId = resolveTeamIdFromTextSegment(rightRaw, teamsMap);
+  if (!leftId || !rightId || leftId === rightId) return [];
+
+  return [leftId, rightId];
+}
+
+function pickNbaMoneylineMarketFromEvent(event) {
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  const filtered = markets.filter(market => {
+    const slug = String(market?.slug ?? '').trim();
+    if (!slug) return false;
+    if (isPolymarketNbaMoneylineMarket(market)) return true;
+
+    try {
+      const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug);
+      return Array.isArray(outcomes)
+        && outcomes.length === 2
+        && !isYesNoOutcomes(outcomes)
+        && String(market?.question ?? '').toLowerCase().includes(' vs');
+    } catch {
+      return false;
+    }
+  });
+
+  return filtered
+    .sort((a, b) => Number(b?.volumeNum ?? b?.volume ?? 0) - Number(a?.volumeNum ?? a?.volume ?? 0))[0]
+    ?? null;
+}
+
+function extractNbaDateFromMarket(market, event = null) {
+  const candidates = [
+    market?.gameStartTime,
+    market?.eventStartTime,
+    market?.startDateIso,
+    market?.endDateIso,
+    market?.startDate,
+    market?.endDate,
+    event?.gameStartTime,
+    event?.eventStartTime,
+    event?.startDateIso,
+    event?.endDateIso,
+    event?.startDate,
+    event?.endDate,
+    event?.ticker
+  ];
+
+  for (const candidate of candidates) {
+    const ymd = coerceDateToYMD(candidate);
+    if (ymd) return ymd;
+  }
+  return '';
+}
+
+function resolveNbaTeamsFromMarket(market, teamsMap) {
+  const slug = String(market?.slug ?? '').trim() || 'unknown';
+  const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(item => String(item ?? '').trim());
+  if (outcomes.length !== 2 || isYesNoOutcomes(outcomes)) {
+    throw new Error(`NBA 市场解析失败（${slug}）：不是双边球队盘口`);
+  }
+
+  const questionTeams = extractTeamIdsFromMatchQuestion(market?.question ?? '', teamsMap);
+  if (questionTeams.length === 2) {
+    return {
+      homeTeamId: questionTeams[0],
+      awayTeamId: questionTeams[1]
+    };
+  }
+
+  const outcomeTeamIds = outcomes.map(outcome => resolveTeamId(outcome, teamsMap));
+  if (outcomeTeamIds[0] && outcomeTeamIds[1] && outcomeTeamIds[0] !== outcomeTeamIds[1]) {
+    return {
+      homeTeamId: outcomeTeamIds[0],
+      awayTeamId: outcomeTeamIds[1]
+    };
+  }
+
+  throw new Error(`NBA 球队解析失败（${slug}）：question=${market?.question ?? ''}, outcomes=${JSON.stringify(outcomes)}`);
+}
+
+async function resolveClassicMatchFromPolymarketInput(matchInput, teamsMap) {
+  const rawUrl = String(matchInput?.polymarket_url ?? '').trim();
+  const slug = normalizePolymarketInputSlug(rawUrl);
+  if (!slug) {
+    throw new Error(`第 ${matchInput?.index ?? '?'} 场比赛的 Polymarket 链接无效：${rawUrl}`);
+  }
+
+  let market = null;
+  let event = null;
+  try {
+    market = await fetchPolymarketMarketBySlug(slug);
+  } catch (err) {
+    if (!String(err?.message ?? '').includes('HTTP 404')) throw err;
+  }
+
+  if (!market) {
+    event = await fetchPolymarketEventBySlug(slug);
+    market = pickNbaMoneylineMarketFromEvent(event);
+    if (!market) {
+      throw new Error(`第 ${matchInput?.index ?? '?'} 场比赛未找到可用 NBA moneyline 市场：${slug}`);
+    }
+  }
+
+  const { homeTeamId, awayTeamId } = resolveNbaTeamsFromMarket(market, teamsMap);
+  const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', String(market?.slug ?? slug)).map(String);
+  const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', String(market?.slug ?? slug));
+  if (outcomes.length !== prices.length) {
+    throw new Error(`第 ${matchInput?.index ?? '?'} 场比赛的 Polymarket 数据异常：outcomes 与 outcomePrices 数量不一致`);
+  }
+
+  const homeIndex = findOutcomeIndexByAliases(outcomes, buildTeamAliasTokens(homeTeamId, teamsMap));
+  const awayIndex = findOutcomeIndexByAliases(outcomes, buildTeamAliasTokens(awayTeamId, teamsMap));
+  if (homeIndex === -1 || awayIndex === -1 || homeIndex === awayIndex) {
+    throw new Error(`第 ${matchInput?.index ?? '?'} 场比赛的 outcome 映射失败：${slug}`);
+  }
+
+  const rounded = roundWinRatesToIntegers(
+    toPercentProbability(prices[homeIndex]),
+    toPercentProbability(prices[awayIndex])
+  );
+  if (!Number.isFinite(rounded.homeWin) || !Number.isFinite(rounded.awayWin)) {
+    throw new Error(`第 ${matchInput?.index ?? '?'} 场比赛的赔率解析失败：${slug}`);
+  }
+
+  const date = extractNbaDateFromMarket(market, event);
+  return {
+    index: Number(matchInput?.index ?? 0),
+    date,
+    home_team: homeTeamId,
+    away_team: awayTeamId,
+    home_win: String(rounded.homeWin),
+    away_win: String(rounded.awayWin),
+    polymarket_url: rawUrl || buildPolymarketEventUrl(String(event?.slug ?? market?.slug ?? slug)),
+    polymarket_slug: String(market?.slug ?? slug).trim()
+  };
+}
+
+async function writeBackClassicMatchesToLark(gamesRows, headerIndexes, larkContext, sourceRowNumber) {
+  const writableFieldMap = {
+    1: ['match1_home', 'match1_away', 'match1_date', 'match1_home_win', 'match1_away_win'],
+    2: ['match2_home', 'match2_away', 'match2_date', 'match2_home_win', 'match2_away_win'],
+    3: ['match3_home', 'match3_away', 'match3_date', 'match3_home_win', 'match3_away_win']
+  };
+
+  const availableFields = new Set(
+    Object.values(writableFieldMap)
+      .flat()
+      .filter(field => Number.isInteger(headerIndexes[field]))
+  );
+  if (availableFields.size === 0) {
+    return 0;
+  }
+
+  for (const row of gamesRows) {
+    const index = Number(row.index);
+    const updates = [
+      [`match${index}_home`, row.home_team],
+      [`match${index}_away`, row.away_team],
+      [`match${index}_date`, row.date],
+      [`match${index}_home_win`, formatPercentForSheet(row.home_win)],
+      [`match${index}_away_win`, formatPercentForSheet(row.away_win)]
+    ];
+
+    for (const [field, value] of updates) {
+      if (!availableFields.has(field)) continue;
+      const colA1 = indexToColumnLabel(headerIndexes[field]);
+      await updateLarkCellValue({
+        accessToken: larkContext.accessToken,
+        spreadsheetToken: larkContext.spreadsheetToken,
+        sheetId: larkContext.sheetId,
+        a1Cell: `${colA1}${sourceRowNumber}`,
+        value
+      });
+    }
+  }
+
+  return gamesRows.length;
+}
+
+async function translateClassicTitles(sourceData, targetLangs, fromLang = 'zh-CN') {
+  const texts = [sourceData.mainTitle, sourceData.subTitle, sourceData.footer];
+  const result = {};
+
+  for (const lang of targetLangs) {
+    process.stdout.write(`  → 翻译 ${lang}...`);
+    const translated = await Promise.all(texts.map(text => translateOneText(text, fromLang, lang)));
+    result[lang] = {
+      mainTitle: translated[0],
+      subTitle: translated[1],
+      footer: translated[2]
+    };
+    console.log(' ✅');
+  }
+
+  return result;
+}
+
+async function writeBackClassicTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId, sourceLang = 'zh-CN') {
+  const sourceLangNormalized = String(sourceLang ?? '').trim().toLowerCase();
+  const langs = Object.keys(translationsMap)
+    .filter(lang => String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized);
+
+  if (langs.length === 0) return 0;
+
+  const translatedRows = langs.map(lang => {
+    const d = translationsMap[lang] ?? {};
+    return [
+      lang,
+      String(d.mainTitle ?? ''),
+      String(d.subTitle ?? ''),
+      String(d.footer ?? '')
+    ];
+  });
+
+  const CLEAR_WINDOW_ROWS = 17; // rows 3..19
+  const blankRow = ['', '', '', ''];
+  const rows = Array.from({ length: CLEAR_WINDOW_ROWS }, (_, i) => translatedRows[i] ?? blankRow);
+  const startRow = 3;
+  const endRow = startRow + rows.length - 1;
+  const range = `${sheetId}!A${startRow}:D${endRow}`;
+
+  const res = await fetch(`https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ valueRange: { range, values: rows } })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.code !== 0) {
+    throw new Error(`NBA 翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+
+  return translatedRows.length;
 }
 
 function normalizeOutcomeToken(value) {
@@ -1526,6 +2074,15 @@ function normalizePolymarketInputSlug(rawInput) {
     return '';
   }
   return normalized;
+}
+
+function getRowPolymarketInput(row) {
+  return String(row?.polymarket_url ?? row?.polymarket_slug ?? '').trim();
+}
+
+function buildPolymarketEventUrl(slug) {
+  const normalized = String(slug ?? '').trim();
+  return normalized ? `https://polymarket.com/event/${normalized}` : '';
 }
 
 function normalizeConfigKey(key) {
@@ -2148,8 +2705,9 @@ function summarizeMarketForError(market, diagnostics = {}) {
 }
 
 async function resolvePolymarketMarketByGame(row, teamsMap, activeNbaMarkets, searchCache, options = {}) {
-  if (row.polymarket_slug) {
-    return { slug: row.polymarket_slug, market: null };
+  const inputSlug = normalizePolymarketInputSlug(getRowPolymarketInput(row));
+  if (inputSlug) {
+    return { slug: inputSlug, market: null };
   }
 
   const dateYmd = parseDateYMD(row.date);
@@ -2187,7 +2745,7 @@ async function resolvePolymarketMarketByGame(row, teamsMap, activeNbaMarkets, se
     const candidateHint = preview ? `\n候选市场预览：\n${preview}` : '\n候选市场预览：无';
     throw new Error(
       `未找到匹配的 Polymarket 市场：${row.home_team} vs ${row.away_team} (${dateYmd})\n` +
-      `请检查表格中的日期和球队 ID，或手动确认这场比赛在 Polymarket 上是否存在。` +
+      `请检查表格中的 Polymarket 链接、日期和球队 ID，或手动确认这场比赛在 Polymarket 上是否存在。` +
       candidateHint
     );
   }
@@ -2214,8 +2772,11 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap, options = {}) {
   let autoMatchedCount = 0;
 
   for (const row of gamesRows) {
-    const inputSlug = normalizePolymarketInputSlug(row.polymarket_slug);
-    const rowForResolve = inputSlug ? { ...row, polymarket_slug: inputSlug } : row;
+    const rawPolymarketInput = getRowPolymarketInput(row);
+    const inputSlug = normalizePolymarketInputSlug(rawPolymarketInput);
+    const rowForResolve = inputSlug
+      ? { ...row, polymarket_url: rawPolymarketInput, polymarket_slug: inputSlug }
+      : row;
 
     let resolved;
     try {
@@ -2281,12 +2842,19 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap, options = {}) {
     if (sport === 'football' && includeDraw && isYesNoOutcomes(outcomes)) {
       const byEvent = await resolveFootballOddsFromEvent(row, market, teamsMap, eventCache, fallbackEventSlug);
       if (byEvent) {
+        const originalPolymarketUrl = String(row.polymarket_url ?? '').trim();
+        const originalPolymarketSlug = String(row.polymarket_slug ?? '').trim();
         nextRows.push({
           ...row,
+          polymarket_url: originalPolymarketUrl || buildPolymarketEventUrl(slug),
           polymarket_slug: slug,
           home_win: String(byEvent.homeWin),
           away_win: String(byEvent.awayWin),
           draw_win: String(byEvent.drawWin),
+          __resolvedPolymarketUrl: buildPolymarketEventUrl(slug),
+          __resolvedPolymarketSlug: slug,
+          __shouldWritePolymarketUrlBack: !originalPolymarketUrl,
+          __shouldWritePolymarketSlugBack: !originalPolymarketSlug,
           __autoFilledFromPolymarket: true
         });
         enrichedCount++;
@@ -2364,12 +2932,19 @@ async function enrichRowsWithPolymarketOdds(gamesRows, teamsMap, options = {}) {
       throw new Error(`Polymarket 概率解析失败（${slug}）：outcomePrices=${JSON.stringify(outcomePrices)}`);
     }
 
+    const originalPolymarketUrl = String(row.polymarket_url ?? '').trim();
+    const originalPolymarketSlug = String(row.polymarket_slug ?? '').trim();
     nextRows.push({
       ...row,
+      polymarket_url: originalPolymarketUrl || buildPolymarketEventUrl(slug),
       polymarket_slug: slug,
       home_win: String(homeWin),
       away_win: String(awayWin),
       draw_win: drawWin,
+      __resolvedPolymarketUrl: buildPolymarketEventUrl(slug),
+      __resolvedPolymarketSlug: slug,
+      __shouldWritePolymarketUrlBack: !originalPolymarketUrl,
+      __shouldWritePolymarketSlugBack: !originalPolymarketSlug,
       __autoFilledFromPolymarket: true
     });
     enrichedCount++;
@@ -3250,10 +3825,15 @@ async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputP
 
   fs.unlinkSync(tmpFile);
 
-  const jpgPath = outputPath.replace(/\.png$/i, '.jpg');
-  const { quality, sizeKB } = await compressToTarget(tmpPng, jpgPath);
-  fs.unlinkSync(tmpPng);
-  console.log(`  ✅ ${path.basename(jpgPath)} (${sizeKB}KB, quality=${quality})`);
+  let compressed;
+  try {
+    compressed = compressPngWithFfmpeg(tmpPng, outputPath, MAX_SIZE_KB);
+  } finally {
+    if (fs.existsSync(tmpPng)) fs.unlinkSync(tmpPng);
+  }
+
+  const { sizeKB: pngSizeKB, profile } = compressed;
+  console.log(`  ✅ ${path.basename(outputPath)} (png=${pngSizeKB}KB, profile=${profile}, size=${OUTPUT_SIZE}x${OUTPUT_SIZE})`);
 }
 
 // ── 公共：扫描背景图、创建输出目录、启动浏览器 ──────────────
@@ -3287,7 +3867,7 @@ function buildZip(dateDir, outputPrefixWithDate, bgFiles) {
   const zipName = `${outputPrefixWithDate}.zip`;
   const zipPath = path.join(dateDir, zipName);
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-  const files = bgFiles.map(f => `${outputPrefixWithDate}_${path.parse(f).name}.jpg`).join(' ');
+  const files = bgFiles.map(f => `"${outputPrefixWithDate}_${path.parse(f).name}.png"`).join(' ');
   execSync(`cd "${dateDir}" && zip "${zipName}" ${files}`);
   const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
   console.log(`\n📦 ${zipName} (${zipKB}KB)`);
@@ -3757,33 +4337,56 @@ async function main() {
   }
 
   // ── Classic NBA 流程 ──────────────────────────────────────
-  console.log('\n从 Lark 普通电子表格拉取比赛数据...');
-  const sheetData = await fetchGamesFromLarkSheets();
-  let gamesRows = sheetData.rows;
-  console.log(`  ✅ 共 ${gamesRows.length} 场比赛`);
-
+  console.log('\n从 Lark NBA 表格拉取主文案和比赛链接...');
+  const larkConfig = loadLarkConfig();
+  const accessToken = await getLarkTenantAccessToken(larkConfig);
+  const classicData = await fetchClassicDataFromLark(larkConfig, accessToken, larkConfig.sourceLang);
   const teamsCsvPath = templateConfig.teamsCsv || TEAMS_CSV;
-  const teamsMap  = loadTeams(teamsCsvPath);
+  const teamsMap = loadTeams(teamsCsvPath);
+  let gamesRows = await Promise.all(
+    classicData.matchInputs.map(item => resolveClassicMatchFromPolymarketInput(item, teamsMap))
+  );
   gamesRows = normalizeGameRowsTeamIds(gamesRows, teamsMap);
-  const { rows: enrichedRows, enrichedCount, autoMatchedCount } = await enrichRowsWithPolymarketOdds(gamesRows, teamsMap);
-  gamesRows = enrichedRows;
-  if (enrichedCount > 0) {
-    console.log(`  ✅ 已从 Polymarket 自动更新 ${enrichedCount} 场赔率`);
-  }
-  if (autoMatchedCount > 0) {
-    console.log(`  ✅ 其中 ${autoMatchedCount} 场由主客队+日期自动匹配到 Polymarket 市场`);
+  console.log(`  ✅ 已解析 ${gamesRows.length} 场比赛链接`);
+
+  const matchWriteCount = await writeBackClassicMatchesToLark(
+    gamesRows,
+    classicData.headerIndexes,
+    classicData.larkContext,
+    classicData.sourceRowNumber
+  );
+  if (matchWriteCount > 0) {
+    console.log(`  ✅ 已回填 Lark 表格 ${matchWriteCount} 场比赛的主客队、日期和赔率`);
   }
 
-  const writtenCount = await writeBackWinRatesToLark(gamesRows, sheetData.headerIndexes, sheetData.larkContext);
-  if (writtenCount > 0) {
-    console.log(`  ✅ 已回填 Lark 表格 ${writtenCount} 场赔率`);
+  const bgDir = templateConfig.bgDir || BG_DIR;
+  const bgFiles = scanBgFiles(bgDir);
+  const sourceLang = String(larkConfig.sourceLang || 'zh-CN').trim();
+  const targetLangs = bgFiles
+    .map(file => path.parse(file).name)
+    .filter(lang => lang !== sourceLang);
+  let translationsMap = { [sourceLang]: classicData.sourceData };
+  if (targetLangs.length > 0) {
+    console.log('\n翻译 NBA 标题、副标题和 footer...');
+    const translated = await translateClassicTitles(classicData.sourceData, targetLangs, sourceLang);
+    translationsMap = { ...translationsMap, ...translated };
+
+    console.log('\n回填翻译结果到 Lark 表格...');
+    const translationWrittenCount = await writeBackClassicTranslationsToLark(
+      classicData.sourceData,
+      translationsMap,
+      accessToken,
+      classicData.larkContext.spreadsheetToken,
+      classicData.larkContext.sheetId,
+      sourceLang
+    );
+    if (translationWrittenCount > 0) {
+      console.log(`  ✅ 已回填 Lark 表格 ${translationWrittenCount} 行翻译`);
+    }
   }
 
   validateWinRates(gamesRows);
   const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
-
-  const bgDir = templateConfig.bgDir || BG_DIR;
-  const bgFiles = scanBgFiles(bgDir);
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
   const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
@@ -3797,7 +4400,7 @@ async function main() {
     const lang = path.parse(bgFile).name;
     const bgPath = path.join(bgDir, bgFile);
     const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
-    const posterPayload = buildPosterPayload(gamesRows, teamsMap, lang, templateKey, copyConfig);
+    const posterPayload = buildClassicPosterPayload(gamesRows, teamsMap, lang, classicData.sourceData, translationsMap, copyConfig);
     await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
   }
 

@@ -252,10 +252,10 @@
   <div id="poster">
     <img class="bg-image" id="bg-image" src="assets/background.png" alt="" />
     <div class="poster-copy" id="poster-copy">
-      <div class="poster-title" id="poster-title">NBA热门比赛</div>
-      <div class="poster-subtitle" id="poster-subtitle">预测比赛，赢取奖励</div>
+      <div class="poster-title" id="poster-title"></div>
+      <div class="poster-subtitle" id="poster-subtitle"></div>
     </div>
-    <div class="poster-footer" id="poster-footer">立即加入：预测市场 – 体育 – NBA</div>
+    <div class="poster-footer" id="poster-footer"></div>
 
     <div class="games-container" id="games-container">
       <!-- 由 JS 动态渲染 -->
@@ -266,9 +266,9 @@
     // 预览用默认数据（generate.js 会注入 window.GAMES_DATA 覆盖它）
     const PREVIEW_DATA = {
       copy: {
-        title: "NBA热门比赛",
-        subtitle: "预测比赛，赢取奖励",
-        footer: "立即加入：预测市场 – 体育 – NBA",
+        title: "Title Preview",
+        subtitle: "Subtitle Preview",
+        footer: "Footer Preview",
         titleFontSize: 110,
         titleLineHeight: 1.2,
         titleMaxWidth: 860,
@@ -296,19 +296,6 @@
 
     const data = window.GAMES_DATA || PREVIEW_DATA;
 
-    const FOOTER_FALLBACK_BY_LANG = {
-      "zh-CN": "立即加入：预测市场 – 体育 – NBA",
-      "zh-TW": "立即加入：預測市場 – 體育 – NBA",
-      en: "Join Now: Prediction Market – Sports – NBA",
-      ja: "今すぐ参加：予測市場 – スポーツ – NBA",
-      es: "Únete Ahora: Mercado de Predicciones – Deportes – NBA",
-      pt: "Entre Agora: Mercado de Previsões – Esportes – NBA",
-      de: "Jetzt teilnehmen: Prognosemarkt – Sport – NBA",
-      fr: "Rejoignez : Marché des Pronostics – Sports – NBA",
-      vi: "Tham gia ngay: Thị trường dự đoán – Thể thao – NBA",
-      default: "Join Now: Prediction Market – Sports – NBA"
-    };
-
     // 如果由 generate.js 注入了背景图路径，则替换
     if (window.BG_PATH) {
       document.getElementById('bg-image').src = window.BG_PATH;
@@ -327,11 +314,10 @@
       const footerEl = document.getElementById('poster-footer');
       const root = document.getElementById('poster');
       if (!copy || !titleEl || !subtitleEl || !footerEl || !root) return;
-      const lang = resolveLang();
 
       titleEl.textContent = copy.title || '';
       subtitleEl.textContent = copy.subtitle || '';
-      footerEl.textContent = copy.footer || FOOTER_FALLBACK_BY_LANG[lang] || FOOTER_FALLBACK_BY_LANG.default;
+      footerEl.textContent = copy.footer || '';
 
       root.style.setProperty('--poster-title-size', `${Number(copy.titleFontSize || 86)}px`);
       root.style.setProperty('--poster-title-line-height', String(copy.titleLineHeight || 1.15));
