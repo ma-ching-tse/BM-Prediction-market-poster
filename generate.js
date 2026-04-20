@@ -2129,7 +2129,9 @@ function resolveWorldCupTeamByOutcome(outcomeText, footballTeamsMap) {
     ['south_korea', ['korearepublic', 'republicofkorea', 'korea']],
     ['england', ['englandnationalteam']],
     ['netherlands', ['holland']],
-    ['ivory_coast', ['cotedivoire']]
+    ['ivory_coast', ['cotedivoire']],
+    ['psg', ['parissaintgermainfc', 'psg', 'parissaintgermain']],
+    ['atletico_madrid', ['clubatleticodemadrid', 'atleticomadrid', 'atletico']]
   ];
 
   for (const [teamId, aliases] of manualAliases) {
@@ -2243,6 +2245,107 @@ async function buildWorldCupCardsFromPolymarketInput(inputSlugOrUrl, cardCount, 
 
   const event = await fetchPolymarketEventBySlug(slug);
   return buildWorldCupCardsFromPolymarketEvent(event, cardCount, footballTeamsMap);
+}
+
+// Extract home/away team names and odds from a Polymarket football market or event
+async function buildFootballGameRowFromPolymarketLink(slugOrUrl, teamsMap) {
+  const slug = normalizePolymarketInputSlug(slugOrUrl);
+  if (!slug) throw new Error(`无效的 Polymarket 链接：${slugOrUrl}`);
+
+  let market = null;
+  let event = null;
+  try {
+    market = await fetchPolymarketMarketBySlug(slug);
+  } catch (err) {
+    if (!String(err?.message ?? '').includes('HTTP 404')) throw err;
+    event = await fetchPolymarketEventBySlug(slug);
+  }
+
+  if (market) {
+    const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(s => String(s ?? '').trim());
+    const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
+    const drawLabels = new Set(['draw', 'tie']);
+
+    // Determine home/away from question ("Team A vs Team B")
+    const question = String(market?.question ?? '').trim();
+    const vsMatch = question.match(/^(.+?)\s+vs\.?\s+(.+?)(?:\?|$)/i);
+    let homeRaw = vsMatch ? vsMatch[1].trim() : outcomes.find(o => !drawLabels.has(normalizeOutcomeToken(o))) ?? outcomes[0] ?? '';
+    let awayRaw = vsMatch ? vsMatch[2].trim() : outcomes.filter(o => !drawLabels.has(normalizeOutcomeToken(o)))[1] ?? outcomes[1] ?? '';
+
+    const toOdds = (name) => {
+      const idx = outcomes.findIndex(o => normalizeOutcomeToken(o) === normalizeOutcomeToken(name));
+      return idx >= 0 ? Math.round(toPercentProbability(prices[idx])) : 0;
+    };
+    const drawIdx = outcomes.findIndex(o => drawLabels.has(normalizeOutcomeToken(o)));
+    const drawWin = drawIdx >= 0 ? Math.round(toPercentProbability(prices[drawIdx])) : null;
+
+    const resolvedHome = resolveWorldCupTeamByOutcome(homeRaw, teamsMap);
+    const resolvedAway = resolveWorldCupTeamByOutcome(awayRaw, teamsMap);
+
+    return {
+      date: extractNbaDateFromMarket(market),
+      home_team: resolvedHome?.id ?? homeRaw,
+      away_team: resolvedAway?.id ?? awayRaw,
+      home_win: String(toOdds(homeRaw)),
+      away_win: String(toOdds(awayRaw)),
+      draw_win: drawWin !== null ? String(drawWin) : '',
+      polymarket_slug: slug
+    };
+  }
+
+  // Event (multiple yes/no markets per team)
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  const yesAliases = new Set(['yes', 'y']);
+  const teamEntries = [];
+  for (const m of markets) {
+    const mOutcomes = parseJsonArrayField(m?.outcomes ?? '[]', 'outcomes', slug).map(s => String(s ?? '').trim());
+    const mPrices = parseJsonArrayField(m?.outcomePrices ?? '[]', 'outcomePrices', slug);
+    const yesIdx = mOutcomes.findIndex(o => yesAliases.has(normalizeOutcomeToken(o)));
+    if (yesIdx === -1) continue;
+    const percent = Math.round(toPercentProbability(mPrices[yesIdx]));
+    const label = String(m?.groupItemTitle ?? '').trim() || extractTeamNameFromQuestion(m?.question ?? '');
+    if (!label) continue;
+    teamEntries.push({ label, percent });
+  }
+  teamEntries.sort((a, b) => b.percent - a.percent);
+  const homeEntry = teamEntries[0];
+  const awayEntry = teamEntries[1];
+  if (!homeEntry || !awayEntry) throw new Error(`无法从 Polymarket 事件解析球队数据（${slug}）`);
+
+  const resolvedHome = resolveWorldCupTeamByOutcome(homeEntry.label, teamsMap);
+  const resolvedAway = resolveWorldCupTeamByOutcome(awayEntry.label, teamsMap);
+
+  return {
+    date: extractNbaDateFromMarket(null, event),
+    home_team: resolvedHome?.id ?? homeEntry.label,
+    away_team: resolvedAway?.id ?? awayEntry.label,
+    home_win: String(homeEntry.percent),
+    away_win: String(awayEntry.percent),
+    draw_win: '',
+    polymarket_slug: slug
+  };
+}
+
+// Resolve link_only rows by fetching data from Polymarket
+async function resolveFootballLinkOnlyRows(rows, teamsMap) {
+  const resolved = [];
+  for (const row of rows) {
+    if (!row.link_only) {
+      resolved.push(row);
+      continue;
+    }
+    try {
+      process.stdout.write(`  → 从链接获取比赛数据（${row.polymarket_slug}）...`);
+      const gameRow = await buildFootballGameRowFromPolymarketLink(row.polymarket_slug, teamsMap);
+      // preserve manually set date if present
+      if (row.date) gameRow.date = row.date;
+      console.log(` ✅ ${gameRow.home_team} vs ${gameRow.away_team}`);
+      resolved.push(gameRow);
+    } catch (err) {
+      console.log(` ❌ ${err.message}`);
+    }
+  }
+  return resolved;
 }
 
 async function writeBackComprehensiveCardsToLark(cards, accessToken, spreadsheetToken, sheetId) {
@@ -3415,21 +3518,36 @@ async function fetchFootballDataFromLark(config, accessToken, sheetId, sourceLan
     const homeWin = getCell(sourceRow, `match${i}_home_win`);
     const awayWin = getCell(sourceRow, `match${i}_away_win`);
 
-    if (!homeTeam || !awayTeam) continue;
-
     const matchLink = getMatchLink(sourceRow, i);
+    const slug = normalizePolymarketInputSlug(matchLink);
+
+    if (!homeTeam || !awayTeam) {
+      if (!slug) continue;
+      // link-only row: team info will be fetched from Polymarket
+      gamesRows.push({
+        date: matchDate,
+        home_team: '',
+        away_team: '',
+        polymarket_slug: slug,
+        home_win: '',
+        away_win: '',
+        link_only: true
+      });
+      continue;
+    }
+
     gamesRows.push({
       date: matchDate,
       home_team: homeTeam,
       away_team: awayTeam,
-      polymarket_slug: normalizePolymarketInputSlug(matchLink),
+      polymarket_slug: slug,
       home_win: String(homeWin).replace('%', '').trim(),
       away_win: String(awayWin).replace('%', '').trim()
     });
   }
 
   if (gamesRows.length === 0) {
-    throw new Error('足球赛事表格没有可用比赛数据（请检查 match1~match3 列）');
+    throw new Error('足球赛事表格没有可用比赛数据（请检查 match1~match3 列或 match1~match3_link 列）');
   }
 
   return {
@@ -4105,7 +4223,15 @@ async function main() {
     console.log(`  ✅ 已读取足球赛事数据（${rawGamesRows.length} 场）`);
 
     const teamsMap = loadTeams(templateConfig.teamsCsv || FOOTBALL_TEAMS_CSV);
-    let gamesRows = normalizeGameRowsTeamIds(rawGamesRows, teamsMap);
+
+    const linkOnlyCount = rawGamesRows.filter(r => r.link_only).length;
+    let resolvedGamesRows = rawGamesRows;
+    if (linkOnlyCount > 0) {
+      console.log(`\n从 Polymarket 链接获取 ${linkOnlyCount} 场比赛数据...`);
+      resolvedGamesRows = await resolveFootballLinkOnlyRows(rawGamesRows, teamsMap);
+    }
+
+    let gamesRows = normalizeGameRowsTeamIds(resolvedGamesRows, teamsMap);
     const { rows: enrichedRows, enrichedCount, autoMatchedCount } = await enrichRowsWithPolymarketOdds(
       gamesRows,
       teamsMap,
