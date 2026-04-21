@@ -1925,6 +1925,7 @@ function resolveTeamId(inputTeamId, teamsMap) {
   const normalizedRaw = normalizeOutcomeToken(raw);
   if (!normalizedRaw) return raw;
 
+  // 先做精确匹配 + 候选尾词匹配
   for (const [teamId, team] of Object.entries(teamsMap)) {
     const candidates = [
       teamId,
@@ -1947,6 +1948,21 @@ function resolveTeamId(inputTeamId, teamsMap) {
         if (tail && tail === normalizedRaw) {
           return teamId;
         }
+      }
+    }
+  }
+
+  // 输入本身是多词（如 "Atlanta Hawks"）时，用输入的尾词反向匹配
+  // 处理 Polymarket outcomes 里写完整城市+队名的情况
+  const inputParts = raw.trim().split(/\s+/);
+  if (inputParts.length > 1) {
+    const inputTail = normalizeOutcomeToken(inputParts[inputParts.length - 1]);
+    if (inputTail) {
+      // 精确匹配 id
+      if (teamsMap[inputTail]) return inputTail;
+      // 匹配 en 字段
+      for (const [teamId, team] of Object.entries(teamsMap)) {
+        if (normalizeOutcomeToken(team.en) === inputTail) return teamId;
       }
     }
   }
