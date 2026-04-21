@@ -16,9 +16,16 @@
     }
 
     .container {
-      max-width: 760px;
+      max-width: 1100px;
       margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 32px;
+      align-items: start;
     }
+
+    /* ── Left panel ── */
+    .left-panel { min-width: 0; }
 
     h1 {
       font-size: 22px;
@@ -44,7 +51,7 @@
 
     .templates {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 10px;
       margin-bottom: 28px;
     }
@@ -151,7 +158,7 @@
       font-size: 12px;
       line-height: 1.7;
       color: #64748b;
-      height: 360px;
+      height: 300px;
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-all;
@@ -180,39 +187,153 @@
     .badge-success { background: #14532d; color: #4ade80; }
     .badge-error   { background: #450a0a; color: #f87171; }
     .badge-running { background: #1e1b4b; color: #a5b4fc; }
+
+    /* ── Right panel: preview ── */
+    .right-panel {
+      position: sticky;
+      top: 40px;
+    }
+
+    .preview-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+
+    .preview-box {
+      border-radius: 10px;
+      border: 1.5px solid #1e293b;
+      background: #0a0d14;
+      overflow: hidden;
+      position: relative;
+      width: 360px;
+      height: 360px;
+    }
+
+    .preview-box.empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-placeholder {
+      font-size: 13px;
+      color: #2d3748;
+      text-align: center;
+      padding: 24px;
+      line-height: 1.6;
+    }
+
+    .preview-loading {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: #0a0d14cc;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .preview-loading.visible { display: flex; }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2.5px solid #1e293b;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .preview-iframe-wrap {
+      display: none;
+      width: 360px;
+      height: 360px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .preview-iframe-wrap.visible { display: block; }
+
+    #preview-frame {
+      width: 1200px;
+      height: 1200px;
+      border: none;
+      transform: scale(0.3);
+      transform-origin: top left;
+      pointer-events: none;
+    }
+
+    .preview-note {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #334155;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>海报生成器</h1>
-    <p class="subtitle">选择模板，点击生成，海报自动输出到 output/ 文件夹</p>
+    <!-- Left -->
+    <div class="left-panel">
+      <h1>海报生成器</h1>
+      <p class="subtitle">选择模板，点击生成，海报自动输出到 output/ 文件夹</p>
 
-    <div class="section-label">选择模板</div>
-    <div class="templates" id="templates"></div>
+      <div class="section-label">选择模板</div>
+      <div class="templates" id="templates"></div>
 
-    <div class="actions">
-      <button id="btn-generate" disabled>生成海报</button>
-      <span id="status-text">请先选择一个模板</span>
+      <div class="actions">
+        <button id="btn-generate" disabled>生成海报</button>
+        <span id="status-text">请先选择一个模板</span>
+      </div>
+
+      <div class="log-wrapper">
+        <div class="log-header">
+          <span class="log-header-label">运行日志</span>
+          <button id="btn-open">打开输出文件夹</button>
+        </div>
+        <div id="log"><span class="log-placeholder">日志将在生成时实时显示…</span></div>
+      </div>
     </div>
 
-    <div class="log-wrapper">
-      <div class="log-header">
-        <span class="log-header-label">运行日志</span>
-        <button id="btn-open">打开输出文件夹</button>
+    <!-- Right: preview -->
+    <div class="right-panel">
+      <div class="preview-label">模板预览</div>
+
+      <div class="preview-box empty" id="preview-box">
+        <div class="preview-placeholder" id="preview-placeholder">选择左侧模板<br>后显示预览</div>
+        <div class="preview-loading" id="preview-loading">
+          <div class="spinner"></div>
+        </div>
+        <div class="preview-iframe-wrap" id="preview-iframe-wrap">
+          <iframe id="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+        </div>
       </div>
-      <div id="log"><span class="log-placeholder">日志将在生成时实时显示…</span></div>
+
+      <p class="preview-note">预览使用模板内置样例数据，生成时将读取飞书最新内容。</p>
     </div>
   </div>
 
   <script>
     let selectedTemplate = null;
     let currentStream = null;
+    let previewDebounce = null;
 
     const btnGenerate = document.getElementById('btn-generate');
     const btnOpen = document.getElementById('btn-open');
     const statusText = document.getElementById('status-text');
     const logEl = document.getElementById('log');
     const templatesEl = document.getElementById('templates');
+    const previewBox = document.getElementById('preview-box');
+    const previewPlaceholder = document.getElementById('preview-placeholder');
+    const previewLoading = document.getElementById('preview-loading');
+    const previewWrap = document.getElementById('preview-iframe-wrap');
+    const previewFrame = document.getElementById('preview-frame');
 
     async function loadTemplates() {
       const res = await fetch('/api/templates');
@@ -228,12 +349,34 @@
       });
     }
 
+    function loadPreview(templateKey) {
+      clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(() => {
+        previewBox.classList.remove('empty');
+        previewPlaceholder.style.display = 'none';
+        previewLoading.classList.add('visible');
+        previewWrap.classList.remove('visible');
+
+        previewFrame.onload = () => {
+          previewLoading.classList.remove('visible');
+          previewWrap.classList.add('visible');
+        };
+        previewFrame.onerror = () => {
+          previewLoading.classList.remove('visible');
+          previewPlaceholder.textContent = '预览加载失败';
+          previewPlaceholder.style.display = '';
+        };
+        previewFrame.src = `/api/preview-html?template=${templateKey}&t=${Date.now()}`;
+      }, 150);
+    }
+
     function selectTemplate(card, t) {
       document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       selectedTemplate = t;
       btnGenerate.disabled = false;
       statusText.textContent = `已选择：${t.name}`;
+      loadPreview(t.key);
     }
 
     function appendLog(text, cls) {

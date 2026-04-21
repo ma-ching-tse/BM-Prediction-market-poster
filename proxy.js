@@ -103,6 +103,65 @@ function handleGenerateStream(req, res) {
   });
 }
 
+const PREVIEW_BG_DIRS = {
+  classic:       'backgrounds-NBA',
+  comprehensive: 'backgrounds-NBA',
+  worldcup:      'backgrounds- football',
+  football:      'backgrounds- football',
+  coinprice:     'backgrounds-global',
+  global:        'backgrounds-global',
+  f1:            'backgrounds-F1',
+  f1driver:      'backgrounds-F1',
+};
+
+function pickBgFile(bgDir) {
+  if (!fs.existsSync(bgDir)) return null;
+  const files = fs.readdirSync(bgDir).filter(f => /\.(png|jpg)$/i.test(f));
+  if (!files.length) return null;
+  const preferred = ['zh-CN.png', 'en.png', 'BG.png', 'zh-CN.jpg', 'en.jpg'];
+  for (const name of preferred) {
+    if (files.includes(name)) return name;
+  }
+  return files[0];
+}
+
+function handlePreviewHtml(req, res) {
+  const urlObj = new URL(req.url, `http://localhost:${PORT}`);
+  const templateKey = urlObj.searchParams.get('template');
+  if (!templateKey) {
+    res.writeHead(400);
+    return res.end('缺少 template 参数');
+  }
+
+  try {
+    const templates = JSON.parse(fs.readFileSync(path.join(__dirname, 'templates.json'), 'utf-8'));
+    const tpl = templates.templates.find(t => t.key === templateKey);
+    if (!tpl) {
+      res.writeHead(404);
+      return res.end('模板不存在');
+    }
+
+    const posterFile = path.join(__dirname, tpl.file);
+    let html = fs.readFileSync(posterFile, 'utf-8');
+
+    const bgDirName = PREVIEW_BG_DIRS[templateKey];
+    const bgFile = bgDirName ? pickBgFile(path.join(__dirname, bgDirName)) : null;
+    const bgInject = bgFile
+      ? `<script>window.BG_PATH = "http://localhost:${PORT}/${bgDirName}/${bgFile}";</script>`
+      : '';
+
+    if (bgInject) {
+      html = html.replace('</head>', bgInject + '\n</head>');
+    }
+
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
+  } catch (err) {
+    res.writeHead(500);
+    res.end(`预览失败：${err.message}`);
+  }
+}
+
 function handleOpenOutput(req, res, body) {
   let payload;
   try {
@@ -146,6 +205,11 @@ const server = http.createServer((req, res) => {
   // SSE 生成流
   if (req.url.startsWith('/api/generate-stream') && req.method === 'GET') {
     return handleGenerateStream(req, res);
+  }
+
+  // 模板预览 HTML
+  if (req.url.startsWith('/api/preview-html') && req.method === 'GET') {
+    return handlePreviewHtml(req, res);
   }
 
   // 打开输出文件夹
