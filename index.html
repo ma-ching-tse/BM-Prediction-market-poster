@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>海报生成器</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 40px 24px;
+    }
+
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 32px;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+
+    .templates {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .template-card {
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1.5px solid #1e293b;
+      background: #161b27;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+
+    .template-card:hover {
+      border-color: #334155;
+      background: #1a2032;
+    }
+
+    .template-card.selected {
+      border-color: #6366f1;
+      background: #1e1f3a;
+    }
+
+    .template-card .name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #e2e8f0;
+    }
+
+    .template-card .key {
+      font-size: 11px;
+      color: #475569;
+      margin-top: 3px;
+    }
+
+    .template-card.selected .name { color: #a5b4fc; }
+    .template-card.selected .key  { color: #6366f1; }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    #btn-generate {
+      padding: 10px 24px;
+      border-radius: 8px;
+      border: none;
+      background: #6366f1;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+    }
+
+    #btn-generate:hover:not(:disabled) { background: #4f46e5; }
+    #btn-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    #status-text {
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .log-wrapper {
+      border-radius: 10px;
+      border: 1.5px solid #1e293b;
+      background: #0a0d14;
+      overflow: hidden;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .log-header-label {
+      font-size: 12px;
+      color: #475569;
+    }
+
+    #btn-open {
+      display: none;
+      padding: 5px 14px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    #btn-open:hover { background: #1e293b; color: #e2e8f0; }
+
+    #log {
+      padding: 16px;
+      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #64748b;
+      height: 360px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    #log.has-error { border-top: 2px solid #ef4444; }
+
+    .log-placeholder {
+      color: #2d3748;
+      font-style: italic;
+    }
+
+    .log-line-success { color: #4ade80; }
+    .log-line-error   { color: #f87171; }
+    .log-line-info    { color: #94a3b8; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      margin-left: 8px;
+    }
+
+    .badge-success { background: #14532d; color: #4ade80; }
+    .badge-error   { background: #450a0a; color: #f87171; }
+    .badge-running { background: #1e1b4b; color: #a5b4fc; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>海报生成器</h1>
+    <p class="subtitle">选择模板，点击生成，海报自动输出到 output/ 文件夹</p>
+
+    <div class="section-label">选择模板</div>
+    <div class="templates" id="templates"></div>
+
+    <div class="actions">
+      <button id="btn-generate" disabled>生成海报</button>
+      <span id="status-text">请先选择一个模板</span>
+    </div>
+
+    <div class="log-wrapper">
+      <div class="log-header">
+        <span class="log-header-label">运行日志</span>
+        <button id="btn-open">打开输出文件夹</button>
+      </div>
+      <div id="log"><span class="log-placeholder">日志将在生成时实时显示…</span></div>
+    </div>
+  </div>
+
+  <script>
+    let selectedTemplate = null;
+    let currentStream = null;
+
+    const btnGenerate = document.getElementById('btn-generate');
+    const btnOpen = document.getElementById('btn-open');
+    const statusText = document.getElementById('status-text');
+    const logEl = document.getElementById('log');
+    const templatesEl = document.getElementById('templates');
+
+    async function loadTemplates() {
+      const res = await fetch('/api/templates');
+      const data = await res.json();
+      data.templates.forEach(t => {
+        const card = document.createElement('div');
+        card.className = 'template-card';
+        card.dataset.key = t.key;
+        card.dataset.outputDir = t.outputDir || '';
+        card.innerHTML = `<div class="name">${t.name}</div><div class="key">${t.key}</div>`;
+        card.addEventListener('click', () => selectTemplate(card, t));
+        templatesEl.appendChild(card);
+      });
+    }
+
+    function selectTemplate(card, t) {
+      document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedTemplate = t;
+      btnGenerate.disabled = false;
+      statusText.textContent = `已选择：${t.name}`;
+    }
+
+    function appendLog(text, cls) {
+      if (logEl.querySelector('.log-placeholder')) logEl.innerHTML = '';
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = text + '\n';
+      logEl.appendChild(span);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setRunning() {
+      btnGenerate.disabled = true;
+      btnOpen.style.display = 'none';
+      logEl.classList.remove('has-error');
+      logEl.innerHTML = '';
+      statusText.innerHTML = `生成中… <span class="badge badge-running">Running</span>`;
+    }
+
+    function setDone(outputDir) {
+      btnGenerate.disabled = false;
+      statusText.innerHTML = `<span class="badge badge-success">✓ 完成</span>`;
+      if (outputDir) {
+        btnOpen.style.display = 'inline-block';
+        btnOpen.onclick = () => fetch('/api/open-output', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir: outputDir }),
+        });
+      }
+    }
+
+    function setError() {
+      btnGenerate.disabled = false;
+      logEl.classList.add('has-error');
+      statusText.innerHTML = `<span class="badge badge-error">✗ 失败</span>`;
+    }
+
+    btnGenerate.addEventListener('click', () => {
+      if (!selectedTemplate) return;
+      if (currentStream) { currentStream.close(); currentStream = null; }
+
+      setRunning();
+
+      const es = new EventSource(`/api/generate-stream?template=${selectedTemplate.key}`);
+      currentStream = es;
+
+      es.onmessage = (e) => appendLog(e.data, 'log-line-info');
+
+      es.addEventListener('done', () => {
+        appendLog('✅ 生成完成！', 'log-line-success');
+        setDone(selectedTemplate.outputDir);
+        es.close();
+        currentStream = null;
+      });
+
+      es.addEventListener('error', (e) => {
+        const msg = e.data || '发生错误';
+        appendLog(`❌ ${msg}`, 'log-line-error');
+        setError();
+        es.close();
+        currentStream = null;
+      });
+
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) return;
+        appendLog('连接中断', 'log-line-error');
+        setError();
+        es.close();
+        currentStream = null;
+      };
+    });
+
+    loadTemplates();
+  </script>
+</body>
+</html>

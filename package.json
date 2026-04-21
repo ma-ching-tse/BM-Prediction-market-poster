@@ -4,6 +4,7 @@
   "description": "NBA 预测市场海报自动化生成工具",
   "main": "generate.js",
   "scripts": {
+    "start": "node proxy.js",
     "generate": "node generate.js",
     "generate:nba": "node generate.js --template classic",
     "generate:comprehensive": "node generate.js --template comprehensive",

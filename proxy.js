@@ -4,6 +4,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 const PORT = 3002;
 const POLYMARKET_BASE = 'https://gamma-api.polymarket.com';
@@ -20,6 +21,8 @@ const MIME = {
   '.csv':  'text/csv',
 };
 
+let isGenerating = false;
+
 function proxyPolymarket(req, res, apiPath) {
   const url = `${POLYMARKET_BASE}${apiPath}`;
   https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (apiRes) => {
@@ -34,8 +37,98 @@ function proxyPolymarket(req, res, apiPath) {
   });
 }
 
+function handleGenerateStream(req, res) {
+  const urlObj = new URL(req.url, `http://localhost:${PORT}`);
+  const templateKey = urlObj.searchParams.get('template');
+
+  if (!templateKey) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: '缺少 template 参数' }));
+  }
+
+  if (isGenerating) {
+    res.writeHead(409, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: '正在生成中，请稍候' }));
+  }
+
+  isGenerating = true;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  const sendEvent = (type, data) => {
+    if (type === 'message') {
+      res.write(`data: ${data}\n\n`);
+    } else {
+      res.write(`event: ${type}\ndata: ${data}\n\n`);
+    }
+  };
+
+  sendEvent('message', `开始生成模板：${templateKey}`);
+
+  const child = spawn('node', ['generate.js', '--template', templateKey], {
+    cwd: __dirname,
+    env: { ...process.env, FORCE_COLOR: '0' },
+  });
+
+  const onLine = (chunk) => {
+    const lines = chunk.toString().split('\n');
+    lines.forEach(line => {
+      if (line.trim()) sendEvent('message', line.replace(/\r/g, ''));
+    });
+  };
+
+  child.stdout.on('data', onLine);
+  child.stderr.on('data', onLine);
+
+  child.on('close', (code) => {
+    isGenerating = false;
+    if (code === 0) {
+      sendEvent('done', '生成完成');
+    } else {
+      sendEvent('error', `生成失败（退出码 ${code}）`);
+    }
+    res.end();
+  });
+
+  req.on('close', () => {
+    if (isGenerating) {
+      child.kill();
+      isGenerating = false;
+    }
+  });
+}
+
+function handleOpenOutput(req, res, body) {
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    res.writeHead(400);
+    return res.end(JSON.stringify({ error: '无效 JSON' }));
+  }
+  const dir = payload.dir;
+  if (!dir) {
+    res.writeHead(400);
+    return res.end(JSON.stringify({ error: '缺少 dir 参数' }));
+  }
+  const absDir = path.resolve(__dirname, dir);
+  spawn('open', [absDir]);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
 
   // Polymarket 代理：/api/polymarket/*
   if (req.url.startsWith('/api/polymarket/')) {
@@ -43,8 +136,28 @@ const server = http.createServer((req, res) => {
     return proxyPolymarket(req, res, apiPath);
   }
 
+  // 返回模板列表
+  if (req.url === '/api/templates' && req.method === 'GET') {
+    const data = fs.readFileSync(path.join(__dirname, 'templates.json'), 'utf-8');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(data);
+  }
+
+  // SSE 生成流
+  if (req.url.startsWith('/api/generate-stream') && req.method === 'GET') {
+    return handleGenerateStream(req, res);
+  }
+
+  // 打开输出文件夹
+  if (req.url === '/api/open-output' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => handleOpenOutput(req, res, body));
+    return;
+  }
+
   // 静态文件服务
-  let filePath = path.join(__dirname, req.url === '/' ? '/poster.f1driver.html' : decodeURIComponent(req.url.split('?')[0]));
+  let filePath = path.join(__dirname, req.url === '/' ? '/index.html' : decodeURIComponent(req.url.split('?')[0]));
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(404);
@@ -57,6 +170,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`预览代理服务器运行在 http://localhost:${PORT}`);
-  console.log(`Polymarket 代理：http://localhost:${PORT}/api/polymarket/events/slug/f1-drivers-champion`);
+  console.log(`\n🎨 海报生成器已启动：http://localhost:${PORT}`);
+  console.log(`Polymarket 代理：http://localhost:${PORT}/api/polymarket/events/slug/f1-drivers-champion\n`);
 });
