@@ -3,402 +3,730 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>海报生成器</title>
+  <title>海报生成器 — BitMart</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      min-height: 100vh;
-      padding: 40px 24px;
+    :root {
+      --bg:              oklch(7.5% 0.016 245);
+      --surface:         oklch(10%  0.020 245);
+      --surface-hover:   oklch(12%  0.024 245);
+      --surface-sel:     oklch(10.5% 0.038 260);
+      --border-sub:      oklch(15%  0.020 245);
+      --border:          oklch(20%  0.025 245);
+      --accent:          oklch(57%  0.21  260);
+      --accent-dim:      oklch(28%  0.10  260);
+      --accent-text:     oklch(72%  0.14  260);
+      --fg:              oklch(90%  0.008 245);
+      --fg-2:            oklch(56%  0.018 245);
+      --fg-muted:        oklch(34%  0.014 245);
+      --log-green:       oklch(73%  0.13  145);
+      --log-red:         oklch(67%  0.19   25);
+      --log-dim:         oklch(44%  0.016 245);
+      --green:           oklch(69%  0.16  145);
+      --red:             oklch(64%  0.20   25);
+      --amber:           oklch(78%  0.14   85);
     }
 
-    .container {
-      max-width: 1100px;
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      padding: clamp(24px, 4vw, 44px) clamp(16px, 3vw, 32px);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Shell ── */
+    .shell {
+      max-width: 1120px;
       margin: 0 auto;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: clamp(28px, 4vw, 48px);
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border-sub);
+    }
+
+    .topbar-wordmark {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--fg);
+      letter-spacing: -0.02em;
+    }
+
+    .topbar-slash {
+      margin: 0 10px;
+      color: var(--border);
+      font-weight: 300;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .topbar-page {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--fg-2);
+    }
+
+    .topbar-spacer { flex: 1; }
+
+    .topbar-env {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--fg-muted);
+      letter-spacing: 0.04em;
+      background: var(--surface);
+      border: 1px solid var(--border-sub);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    /* ── Main layout ── */
+    .main {
       display: grid;
-      grid-template-columns: 1fr 360px;
-      gap: 32px;
+      grid-template-columns: 1fr 352px;
+      gap: 20px;
       align-items: start;
     }
 
-    /* ── Left panel ── */
-    .left-panel { min-width: 0; }
+    .left  { min-width: 0; }
 
-    h1 {
-      font-size: 22px;
+    /* ── Section label ── */
+    .slabel {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 10px;
       font-weight: 600;
-      color: #f8fafc;
-      margin-bottom: 6px;
-    }
-
-    .subtitle {
-      font-size: 13px;
-      color: #64748b;
-      margin-bottom: 32px;
-    }
-
-    .section-label {
-      font-size: 12px;
-      font-weight: 500;
-      color: #94a3b8;
+      color: var(--fg-muted);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 12px;
+      letter-spacing: 0.10em;
+      margin-bottom: 10px;
     }
 
-    .templates {
+    .slabel-bar {
+      width: 2px;
+      height: 11px;
+      background: var(--accent);
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+
+    /* ── Template grid ── */
+    .tgrid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      gap: 10px;
-      margin-bottom: 28px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      margin-bottom: 18px;
     }
 
-    .template-card {
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1.5px solid #1e293b;
-      background: #161b27;
+    .tcard {
+      position: relative;
+      padding: 11px 11px 9px 13px;
+      background: var(--surface);
+      border: 1px solid var(--border-sub);
+      border-radius: 5px;
       cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
+      transition: background 0.1s, border-color 0.1s;
       user-select: none;
+      overflow: hidden;
     }
 
-    .template-card:hover {
-      border-color: #334155;
-      background: #1a2032;
+    .tcard::after {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 2px;
+      background: transparent;
+      transition: background 0.1s;
     }
 
-    .template-card.selected {
-      border-color: #6366f1;
-      background: #1e1f3a;
+    .tcard:hover {
+      background: var(--surface-hover);
+      border-color: var(--border);
     }
 
-    .template-card .name {
-      font-size: 14px;
-      font-weight: 500;
-      color: #e2e8f0;
+    .tcard.selected {
+      background: var(--surface-sel);
+      border-color: var(--accent-dim);
     }
 
-    .template-card .key {
-      font-size: 11px;
-      color: #475569;
-      margin-top: 3px;
+    .tcard.selected::after {
+      background: var(--accent);
     }
 
-    .template-card.selected .name { color: #a5b4fc; }
-    .template-card.selected .key  { color: #6366f1; }
+    .tcard-num {
+      position: absolute;
+      top: 8px;
+      right: 9px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      color: var(--fg-muted);
+      opacity: 0.45;
+    }
 
+    .tcard-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--fg);
+      line-height: 1.3;
+      margin-bottom: 3px;
+      transition: color 0.1s;
+    }
+
+    .tcard-key {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9.5px;
+      color: var(--fg-muted);
+    }
+
+    .tcard.selected .tcard-name { color: var(--accent-text); }
+    .tcard.selected .tcard-key  { color: var(--accent-dim); opacity: 0.9; }
+    .tcard.selected .tcard-num  { color: var(--accent-text); opacity: 0.3; }
+
+    /* ── Actions ── */
     .actions {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 24px;
+      margin-bottom: 18px;
     }
 
     #btn-generate {
-      padding: 10px 24px;
-      border-radius: 8px;
+      position: relative;
+      padding: 8px 20px;
+      background: var(--accent);
+      color: oklch(97% 0.005 245);
       border: none;
-      background: #6366f1;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 500;
+      border-radius: 5px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
       cursor: pointer;
-      transition: opacity 0.15s, background 0.15s;
+      overflow: hidden;
+      flex-shrink: 0;
+      transition: opacity 0.12s, transform 0.08s;
     }
 
-    #btn-generate:hover:not(:disabled) { background: #4f46e5; }
-    #btn-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+    #btn-generate::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg,
+        transparent 0%,
+        oklch(100% 0 0 / 0.10) 45%,
+        transparent 55%
+      );
+      transform: translateX(-120%);
+    }
+
+    #btn-generate.running::before {
+      animation: sheen 1.6s ease-in-out infinite;
+    }
+
+    @keyframes sheen {
+      to { transform: translateX(220%); }
+    }
+
+    #btn-generate:hover:not(:disabled) { opacity: 0.87; transform: translateY(-1px); }
+    #btn-generate:active:not(:disabled) { transform: translateY(0); }
+    #btn-generate:disabled { opacity: 0.30; cursor: not-allowed; }
 
     #status-text {
-      font-size: 13px;
-      color: #64748b;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg-2);
     }
 
-    .log-wrapper {
-      border-radius: 10px;
-      border: 1.5px solid #1e293b;
-      background: #0a0d14;
+    /* ── Status badges ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 7px 2px 5px;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .badge-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .badge-running {
+      background: oklch(14% 0.04 260);
+      color: oklch(68% 0.15 260);
+    }
+    .badge-running .badge-dot {
+      background: oklch(65% 0.18 260);
+      animation: blink-dot 1s ease-in-out infinite;
+    }
+
+    .badge-done {
+      background: oklch(13% 0.04 145);
+      color: var(--green);
+    }
+    .badge-done .badge-dot { background: var(--green); }
+
+    .badge-fail {
+      background: oklch(12% 0.05 25);
+      color: var(--red);
+    }
+    .badge-fail .badge-dot { background: var(--red); }
+
+    @keyframes blink-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+
+    /* ── Log terminal ── */
+    .log-terminal {
+      border: 1px solid var(--border-sub);
+      border-radius: 7px;
+      background: oklch(6.5% 0.013 245);
       overflow: hidden;
     }
 
-    .log-header {
+    .log-chrome {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 10px 16px;
-      border-bottom: 1px solid #1e293b;
+      gap: 0;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border-sub);
+      background: oklch(8% 0.015 245);
     }
 
-    .log-header-label {
-      font-size: 12px;
-      color: #475569;
+    .chrome-dots {
+      display: flex;
+      gap: 5px;
+      margin-right: 10px;
+    }
+
+    .cdot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+    }
+    .cdot-r { background: oklch(55% 0.19 25 / 0.55); }
+    .cdot-y { background: oklch(76% 0.14 85 / 0.55); }
+    .cdot-g { background: oklch(60% 0.16 145 / 0.55); }
+
+    .chrome-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--fg-muted);
+      letter-spacing: 0.04em;
+      flex: 1;
     }
 
     #btn-open {
       display: none;
-      padding: 5px 14px;
-      border-radius: 6px;
-      border: 1px solid #334155;
+      padding: 3px 9px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
       background: transparent;
-      color: #94a3b8;
-      font-size: 12px;
+      color: var(--fg-2);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 500;
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
+      transition: background 0.1s, color 0.1s;
     }
 
-    #btn-open:hover { background: #1e293b; color: #e2e8f0; }
+    #btn-open:hover { background: var(--surface-hover); color: var(--fg); }
 
-    #log {
-      padding: 16px;
-      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
-      font-size: 12px;
-      line-height: 1.7;
-      color: #64748b;
-      height: 300px;
+    /* log body with line-number gutter */
+    .log-body {
+      display: flex;
+      height: 272px;
+      overflow: hidden;
+    }
+
+    .log-gutter {
+      flex-shrink: 0;
+      width: 38px;
+      padding: 12px 0;
+      border-right: 1px solid var(--border-sub);
+      background: oklch(7% 0.014 245);
+    }
+
+    .log-gutter-num {
+      display: block;
+      padding: 0 8px 0 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      line-height: 1.75;
+      color: var(--fg-muted);
+      text-align: right;
+      opacity: 0.35;
+      user-select: none;
+    }
+
+    .log-content {
+      flex: 1;
       overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px 14px;
+    }
+
+    .log-content::-webkit-scrollbar { width: 3px; }
+    .log-content::-webkit-scrollbar-track { background: transparent; }
+    .log-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .log-line {
+      display: block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 1.75;
+      color: var(--log-dim);
       white-space: pre-wrap;
       word-break: break-all;
     }
 
-    #log.has-error { border-top: 2px solid #ef4444; }
+    .log-line.ok   { color: var(--log-green); }
+    .log-line.err  { color: var(--log-red); }
+    .log-line.idle { color: var(--fg-muted); font-style: italic; opacity: 0.5; }
 
-    .log-placeholder {
-      color: #2d3748;
-      font-style: italic;
-    }
-
-    .log-line-success { color: #4ade80; }
-    .log-line-error   { color: #f87171; }
-    .log-line-info    { color: #94a3b8; }
-
-    .badge {
+    .log-cursor {
       display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 500;
-      margin-left: 8px;
+      width: 6px;
+      height: 11px;
+      background: var(--accent);
+      vertical-align: text-bottom;
+      margin-left: 1px;
+      animation: cur 1s step-end infinite;
+      opacity: 0.85;
     }
 
-    .badge-success { background: #14532d; color: #4ade80; }
-    .badge-error   { background: #450a0a; color: #f87171; }
-    .badge-running { background: #1e1b4b; color: #a5b4fc; }
+    @keyframes cur {
+      0%, 100% { opacity: 0.85; }
+      50%       { opacity: 0; }
+    }
 
-    /* ── Right panel: preview ── */
-    .right-panel {
+    /* ── Right / preview ── */
+    .right {
       position: sticky;
-      top: 40px;
+      top: clamp(24px, 4vw, 44px);
     }
 
-    .preview-label {
-      font-size: 12px;
-      font-weight: 500;
-      color: #94a3b8;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 12px;
-    }
-
-    .preview-box {
-      border-radius: 10px;
-      border: 1.5px solid #1e293b;
-      background: #0a0d14;
-      overflow: hidden;
+    .preview-shell {
       position: relative;
-      width: 360px;
-      height: 360px;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: var(--surface);
+      border: 1px solid var(--border-sub);
+      border-radius: 7px;
+      overflow: hidden;
     }
 
-    .preview-box.empty {
+    /* empty state */
+    .preview-empty {
+      position: absolute;
+      inset: 0;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 10px;
+      pointer-events: none;
     }
 
-    .preview-placeholder {
-      font-size: 13px;
-      color: #2d3748;
-      text-align: center;
-      padding: 24px;
-      line-height: 1.6;
+    .preview-glyph {
+      font-size: 36px;
+      line-height: 1;
+      opacity: 0.07;
+      color: var(--fg);
+      user-select: none;
     }
 
-    .preview-loading {
+    .preview-empty-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9.5px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--fg-muted);
+      opacity: 0.38;
+    }
+
+    /* loading overlay */
+    .preview-loader {
       display: none;
       position: absolute;
       inset: 0;
-      background: #0a0d14cc;
+      background: oklch(8.5% 0.018 245 / 0.9);
       align-items: center;
       justify-content: center;
-      z-index: 10;
+      z-index: 5;
     }
 
-    .preview-loading.visible { display: flex; }
+    .preview-loader.on { display: flex; }
 
-    .spinner {
-      width: 28px;
-      height: 28px;
-      border: 2.5px solid #1e293b;
-      border-top-color: #6366f1;
+    .spin {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.7s linear infinite;
+      animation: rot 0.6s linear infinite;
     }
 
-    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes rot { to { transform: rotate(360deg); } }
 
+    /* iframe wrapper */
     .preview-iframe-wrap {
       display: none;
-      width: 360px;
-      height: 360px;
-      overflow: hidden;
-      position: relative;
+      position: absolute;
+      inset: 0;
     }
 
-    .preview-iframe-wrap.visible { display: block; }
+    .preview-iframe-wrap.on { display: block; }
 
     #preview-frame {
       width: 1200px;
       height: 1200px;
       border: none;
-      transform: scale(0.3);
       transform-origin: top left;
       pointer-events: none;
     }
 
     .preview-note {
-      margin-top: 10px;
-      font-size: 11px;
-      color: #334155;
-      line-height: 1.5;
+      margin-top: 8px;
+      font-size: 10.5px;
+      color: var(--fg-muted);
+      line-height: 1.55;
+      opacity: 0.55;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Left -->
-    <div class="left-panel">
-      <h1>海报生成器</h1>
-      <p class="subtitle">选择模板，点击生成，海报自动输出到 output/ 文件夹</p>
+  <div class="shell">
 
-      <div class="section-label">选择模板</div>
-      <div class="templates" id="templates"></div>
+    <header class="topbar">
+      <span class="topbar-wordmark">BitMart</span>
+      <span class="topbar-slash">/</span>
+      <span class="topbar-page">海报生成器</span>
+      <div class="topbar-spacer"></div>
+      <span class="topbar-env">localhost:3002</span>
+    </header>
 
-      <div class="actions">
-        <button id="btn-generate" disabled>生成海报</button>
-        <span id="status-text">请先选择一个模板</span>
+    <div class="main">
+
+      <!-- ── Left ── -->
+      <div class="left">
+
+        <div class="slabel"><span class="slabel-bar"></span>选择模板</div>
+        <div class="tgrid" id="templates"></div>
+
+        <div class="actions">
+          <button id="btn-generate" disabled>生成海报</button>
+          <span id="status-text">请先选择模板</span>
+        </div>
+
+        <div class="log-terminal">
+          <div class="log-chrome">
+            <div class="chrome-dots">
+              <div class="cdot cdot-r"></div>
+              <div class="cdot cdot-y"></div>
+              <div class="cdot cdot-g"></div>
+            </div>
+            <span class="chrome-title">运行日志</span>
+            <button id="btn-open">打开输出文件夹</button>
+          </div>
+          <div class="log-body">
+            <div class="log-gutter" id="log-gutter"></div>
+            <div class="log-content" id="log-content">
+              <span class="log-line idle" id="log-placeholder">等待生成指令…</span>
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      <div class="log-wrapper">
-        <div class="log-header">
-          <span class="log-header-label">运行日志</span>
-          <button id="btn-open">打开输出文件夹</button>
-        </div>
-        <div id="log"><span class="log-placeholder">日志将在生成时实时显示…</span></div>
-      </div>
-    </div>
+      <!-- ── Right ── -->
+      <div class="right">
+        <div class="slabel"><span class="slabel-bar"></span>模板预览</div>
 
-    <!-- Right: preview -->
-    <div class="right-panel">
-      <div class="preview-label">模板预览</div>
+        <div class="preview-shell" id="preview-shell">
+          <div class="preview-empty" id="preview-empty">
+            <div class="preview-glyph">◎</div>
+            <div class="preview-empty-label">选择模板后预览</div>
+          </div>
+          <div class="preview-loader" id="preview-loader">
+            <div class="spin"></div>
+          </div>
+          <div class="preview-iframe-wrap" id="preview-iframe-wrap">
+            <iframe id="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+          </div>
+        </div>
 
-      <div class="preview-box empty" id="preview-box">
-        <div class="preview-placeholder" id="preview-placeholder">选择左侧模板<br>后显示预览</div>
-        <div class="preview-loading" id="preview-loading">
-          <div class="spinner"></div>
-        </div>
-        <div class="preview-iframe-wrap" id="preview-iframe-wrap">
-          <iframe id="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
-        </div>
+        <p class="preview-note">预览使用模板内置样例数据，生成时读取飞书最新内容。</p>
       </div>
 
-      <p class="preview-note">预览使用模板内置样例数据，生成时将读取飞书最新内容。</p>
     </div>
   </div>
 
   <script>
+    // ── State ──
     let selectedTemplate = null;
-    let currentStream = null;
-    let previewDebounce = null;
+    let currentStream    = null;
+    let previewDebounce  = null;
+    let logLineCount     = 0;
+    let cursorEl         = null;
+    let isRunning        = false;
 
-    const btnGenerate = document.getElementById('btn-generate');
-    const btnOpen = document.getElementById('btn-open');
-    const statusText = document.getElementById('status-text');
-    const logEl = document.getElementById('log');
-    const templatesEl = document.getElementById('templates');
-    const previewBox = document.getElementById('preview-box');
-    const previewPlaceholder = document.getElementById('preview-placeholder');
-    const previewLoading = document.getElementById('preview-loading');
-    const previewWrap = document.getElementById('preview-iframe-wrap');
+    // ── DOM ──
+    const btnGenerate  = document.getElementById('btn-generate');
+    const btnOpen      = document.getElementById('btn-open');
+    const statusText   = document.getElementById('status-text');
+    const templatesEl  = document.getElementById('templates');
+    const logGutter    = document.getElementById('log-gutter');
+    const logContent   = document.getElementById('log-content');
+    const previewShell = document.getElementById('preview-shell');
+    const previewEmpty = document.getElementById('preview-empty');
+    const previewLoader= document.getElementById('preview-loader');
+    const previewWrap  = document.getElementById('preview-iframe-wrap');
     const previewFrame = document.getElementById('preview-frame');
 
+    // ── Scale preview ──
+    function scalePreview() {
+      const w = previewShell.offsetWidth;
+      previewFrame.style.transform = `scale(${w / 1200})`;
+    }
+    new ResizeObserver(scalePreview).observe(previewShell);
+    scalePreview();
+
+    // ── Load templates ──
     async function loadTemplates() {
-      const res = await fetch('/api/templates');
+      const res  = await fetch('/api/templates');
       const data = await res.json();
-      data.templates.forEach(t => {
+      data.templates.forEach((t, i) => {
+        const num  = String(i + 1).padStart(2, '0');
         const card = document.createElement('div');
-        card.className = 'template-card';
+        card.className = 'tcard';
         card.dataset.key = t.key;
         card.dataset.outputDir = t.outputDir || '';
-        card.innerHTML = `<div class="name">${t.name}</div><div class="key">${t.key}</div>`;
+        card.innerHTML = `
+          <span class="tcard-num">${num}</span>
+          <div class="tcard-name">${t.name}</div>
+          <div class="tcard-key">${t.key}</div>
+        `;
         card.addEventListener('click', () => selectTemplate(card, t));
         templatesEl.appendChild(card);
       });
     }
 
-    function loadPreview(templateKey) {
-      clearTimeout(previewDebounce);
-      previewDebounce = setTimeout(() => {
-        previewBox.classList.remove('empty');
-        previewPlaceholder.style.display = 'none';
-        previewLoading.classList.add('visible');
-        previewWrap.classList.remove('visible');
-
-        previewFrame.onload = () => {
-          previewLoading.classList.remove('visible');
-          previewWrap.classList.add('visible');
-        };
-        previewFrame.onerror = () => {
-          previewLoading.classList.remove('visible');
-          previewPlaceholder.textContent = '预览加载失败';
-          previewPlaceholder.style.display = '';
-        };
-        previewFrame.src = `/api/preview-html?template=${templateKey}&t=${Date.now()}`;
-      }, 150);
-    }
-
+    // ── Select template ──
     function selectTemplate(card, t) {
-      document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('.tcard').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       selectedTemplate = t;
-      btnGenerate.disabled = false;
+      btnGenerate.disabled = isRunning;
       statusText.textContent = `已选择：${t.name}`;
       loadPreview(t.key);
     }
 
-    function appendLog(text, cls) {
-      if (logEl.querySelector('.log-placeholder')) logEl.innerHTML = '';
-      const span = document.createElement('span');
-      if (cls) span.className = cls;
-      span.textContent = text + '\n';
-      logEl.appendChild(span);
-      logEl.scrollTop = logEl.scrollHeight;
+    // ── Preview ──
+    function loadPreview(key) {
+      clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(() => {
+        previewEmpty.style.display = 'none';
+        previewLoader.classList.add('on');
+        previewWrap.classList.remove('on');
+
+        previewFrame.onload = () => {
+          previewLoader.classList.remove('on');
+          previewWrap.classList.add('on');
+          scalePreview();
+        };
+        previewFrame.onerror = () => {
+          previewLoader.classList.remove('on');
+          previewEmpty.style.display = '';
+        };
+        previewFrame.src = `/api/preview-html?template=${key}&t=${Date.now()}`;
+      }, 130);
     }
 
+    // ── Log helpers ──
+    function clearLog() {
+      logGutter.innerHTML = '';
+      logContent.innerHTML = '';
+      logLineCount = 0;
+      cursorEl = null;
+    }
+
+    function addGutterNum() {
+      const n = document.createElement('span');
+      n.className = 'log-gutter-num';
+      n.textContent = logLineCount;
+      logGutter.appendChild(n);
+    }
+
+    function appendLog(text, cls) {
+      // Remove placeholder
+      const ph = document.getElementById('log-placeholder');
+      if (ph) ph.remove();
+
+      // Remove cursor from previous line
+      if (cursorEl) { cursorEl.remove(); cursorEl = null; }
+
+      logLineCount++;
+      addGutterNum();
+
+      const line = document.createElement('span');
+      line.className = 'log-line' + (cls ? ' ' + cls : '');
+      line.textContent = text;
+      logContent.appendChild(line);
+      logContent.appendChild(document.createTextNode('\n'));
+      logContent.scrollTop = logContent.scrollHeight;
+      logGutter.scrollTop  = logGutter.scrollHeight;
+    }
+
+    function showCursor() {
+      if (cursorEl) return;
+      const lines = logContent.querySelectorAll('.log-line');
+      const last  = lines[lines.length - 1];
+      if (!last) return;
+      cursorEl = document.createElement('span');
+      cursorEl.className = 'log-cursor';
+      last.appendChild(cursorEl);
+    }
+
+    function hideCursor() {
+      if (cursorEl) { cursorEl.remove(); cursorEl = null; }
+    }
+
+    // ── Generate states ──
     function setRunning() {
+      isRunning = true;
       btnGenerate.disabled = true;
+      btnGenerate.classList.add('running');
       btnOpen.style.display = 'none';
-      logEl.classList.remove('has-error');
-      logEl.innerHTML = '';
-      statusText.innerHTML = `生成中… <span class="badge badge-running">Running</span>`;
+      clearLog();
+      statusText.innerHTML = badge('running', 'Running');
     }
 
     function setDone(outputDir) {
+      isRunning = false;
       btnGenerate.disabled = false;
-      statusText.innerHTML = `<span class="badge badge-success">✓ 完成</span>`;
+      btnGenerate.classList.remove('running');
+      hideCursor();
+      statusText.innerHTML = badge('done', 'Done');
       if (outputDir) {
         btnOpen.style.display = 'inline-block';
         btnOpen.onclick = () => fetch('/api/open-output', {
@@ -410,13 +738,20 @@
     }
 
     function setError() {
+      isRunning = false;
       btnGenerate.disabled = false;
-      logEl.classList.add('has-error');
-      statusText.innerHTML = `<span class="badge badge-error">✗ 失败</span>`;
+      btnGenerate.classList.remove('running');
+      hideCursor();
+      statusText.innerHTML = badge('fail', 'Failed');
     }
 
+    function badge(type, label) {
+      return `<span class="badge badge-${type}"><span class="badge-dot"></span>${label}</span>`;
+    }
+
+    // ── Generate ──
     btnGenerate.addEventListener('click', () => {
-      if (!selectedTemplate) return;
+      if (!selectedTemplate || isRunning) return;
       if (currentStream) { currentStream.close(); currentStream = null; }
 
       setRunning();
@@ -424,18 +759,20 @@
       const es = new EventSource(`/api/generate-stream?template=${selectedTemplate.key}`);
       currentStream = es;
 
-      es.onmessage = (e) => appendLog(e.data, 'log-line-info');
+      es.onmessage = (e) => {
+        appendLog(e.data);
+        showCursor();
+      };
 
       es.addEventListener('done', () => {
-        appendLog('✅ 生成完成！', 'log-line-success');
+        appendLog('生成完成', 'ok');
         setDone(selectedTemplate.outputDir);
         es.close();
         currentStream = null;
       });
 
       es.addEventListener('error', (e) => {
-        const msg = e.data || '发生错误';
-        appendLog(`❌ ${msg}`, 'log-line-error');
+        appendLog(e.data || '生成失败', 'err');
         setError();
         es.close();
         currentStream = null;
@@ -443,7 +780,7 @@
 
       es.onerror = () => {
         if (es.readyState === EventSource.CLOSED) return;
-        appendLog('连接中断', 'log-line-error');
+        appendLog('连接中断', 'err');
         setError();
         es.close();
         currentStream = null;
