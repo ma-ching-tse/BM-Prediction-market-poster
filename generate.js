@@ -2125,13 +2125,33 @@ function resolveWorldCupTeamByOutcome(outcomeText, footballTeamsMap) {
   }
 
   const manualAliases = [
+    // 国家队
     ['usa', ['unitedstates', 'unitedstatesofamerica', 'us']],
     ['south_korea', ['korearepublic', 'republicofkorea', 'korea']],
     ['england', ['englandnationalteam']],
     ['netherlands', ['holland']],
     ['ivory_coast', ['cotedivoire']],
+    // 法甲
     ['psg', ['parissaintgermainfc', 'psg', 'parissaintgermain']],
-    ['atletico_madrid', ['clubatleticodemadrid', 'atleticomadrid', 'atletico']]
+    ['lyon', ['olympiquelyonnais', 'olympiquelyon', 'ol']],
+    ['marseille', ['olympiquemarseille', 'om']],
+    ['rennes', ['staderennais', 'rennais']],
+    ['brest', ['stadebrestois', 'brestois']],
+    // 西甲
+    ['atletico_madrid', ['clubatleticodemadrid', 'atleticomadrid', 'atleticodemadrid', 'atleticosdemadrid', 'atletico']],
+    ['celta_vigo', ['celtadevigo', 'rccelta']],
+    ['athletic_bilbao', ['athleticclub', 'athleticclubbilbao', 'athleticclubdebilbao']],
+    // 德甲
+    ['bayern', ['bayernmunchen', 'bayernmunich', 'fcbayern', 'fcbayernmunich']],
+    ['monchengladbach', ['borussiamonchengladbach', 'monchengladbach', 'mgladbach']],
+    ['hamburg', ['hamburger', 'hamburgsv']],
+    ['cologne', ['fckoln', 'koln', 'fckolnde', '1fckoln']],
+    // 意甲
+    ['inter_milan', ['inter', 'internazionale', 'fcinternazionale', 'fcinter']],
+    ['ac_milan', ['milan']],
+    ['juventus', ['juve']],
+    // 葡超
+    ['sporting_cp', ['sporting', 'sportinglisbon', 'sportingportugal']],
   ];
 
   for (const [teamId, aliases] of manualAliases) {
