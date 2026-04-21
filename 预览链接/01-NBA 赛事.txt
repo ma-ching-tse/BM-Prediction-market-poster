@@ -1,7 +1,0 @@
-name: NBA 赛事
-key: classic
-previewUrl: http://localhost:3001/poster.html
-script: npm run generate
-templateFile: poster.html
-outputDir: output/NBA/
-outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/NBA/

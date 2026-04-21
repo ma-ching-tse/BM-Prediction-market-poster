@@ -1,7 +1,0 @@
-name: 全球预测市场
-key: global
-previewUrl: http://localhost:3001/poster.global-prediction-market.html
-script: npm run generate:global
-templateFile: poster.global-prediction-market.html
-outputDir: output/全球预测市场/
-outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/全球预测市场/

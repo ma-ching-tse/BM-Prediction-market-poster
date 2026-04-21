@@ -1,7 +1,0 @@
-name: 综合事件
-key: comprehensive
-previewUrl: http://localhost:3001/poster.comprehensive-event.html
-script: npm run generate:comprehensive
-templateFile: poster.comprehensive-event.html
-outputDir: output/综合事件/
-outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/综合事件/

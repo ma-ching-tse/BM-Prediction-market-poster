@@ -1,7 +1,0 @@
-name: F1 车手
-key: f1driver
-previewUrl: http://localhost:3001/poster.f1driver.html
-script: npm run generate:f1driver
-templateFile: poster.f1driver.html
-outputDir: output/F1 Driver/
-outputAbs: /Users/bm/Documents/BitMart Work/预测市场海报模版/output/F1 Driver/
