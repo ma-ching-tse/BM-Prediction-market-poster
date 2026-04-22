@@ -5,7 +5,7 @@ const { execSync, execFileSync } = require('child_process');
 
 const MAX_SIZE_KB = 300;
 const POLYMARKET_BASE_URL = 'https://gamma-api.polymarket.com';
-const OUTPUT_SIZE = 900;
+const OUTPUT_SIZE = 1100;
 const PNG_COLOR_CANDIDATES = [256, 224, 192, 160, 128, 112, 96, 80, 64, 48, 32];
 
 function runFfmpeg(args) {
@@ -14,7 +14,7 @@ function runFfmpeg(args) {
   });
 }
 
-// ── ffmpeg 方案：缩放到 900x900，并通过调色板压缩 PNG ───────────
+// ── ffmpeg 方案：缩放到 OUTPUT_SIZE x OUTPUT_SIZE，并通过调色板压缩 PNG ───────────
 function compressPngWithFfmpeg(inputPath, outputPath, maxKB = MAX_SIZE_KB) {
   const outputDir = path.dirname(outputPath);
   const stem = path.basename(outputPath, path.extname(outputPath));
@@ -1670,6 +1670,35 @@ function extractNbaDateFromMarket(market, event = null) {
   return '';
 }
 
+// 足球专用日期提取：
+// 1. 优先从 slug 末尾提取日期（如 epl-bur-mac-2026-04-22 → 2026-04-22），最准确
+// 2. 次选 gameStartTime / eventStartTime / startDate
+// 3. 最后才用 endDate（市场结算日，通常是比赛次日，会偏差 1 天）
+function extractFootballMatchDate(market, event = null) {
+  // 从 slug 末尾解析：xxx-YYYY-MM-DD
+  const slug = String(market?.slug ?? event?.slug ?? '').trim();
+  const slugDateMatch = slug.match(/(\d{4}-\d{2}-\d{2})$/);
+  if (slugDateMatch) return slugDateMatch[1];
+
+  const preferredCandidates = [
+    market?.gameStartTime,
+    market?.eventStartTime,
+    market?.startDateIso,
+    market?.startDate,
+    event?.gameStartTime,
+    event?.eventStartTime,
+    event?.startDateIso,
+    event?.startDate,
+  ];
+  for (const candidate of preferredCandidates) {
+    const ymd = coerceDateToYMD(candidate);
+    if (ymd) return ymd;
+  }
+  // endDate 作为最后兜底（可能偏差 1 天）
+  const fallback = coerceDateToYMD(market?.endDateIso ?? market?.endDate ?? event?.endDateIso ?? event?.endDate ?? '');
+  return fallback;
+}
+
 function resolveNbaTeamsFromMarket(market, teamsMap) {
   const slug = String(market?.slug ?? '').trim() || 'unknown';
   const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(item => String(item ?? '').trim());
@@ -1966,6 +1995,43 @@ function resolveTeamId(inputTeamId, teamsMap) {
     }
   }
 
+  // 英超及其他手动别名兜底
+  const TEAM_ALIASES = [
+    ['tottenham', ['spurs', 'tottenhamhotspur', 'tottenhamhotspurfc']],
+    ['wolves', ['wolverhampton', 'wolverhamptonwanderers', 'wolverhamptonwanderersfc']],
+    ['west_ham', ['westham', 'westhamunited', 'westhamunitedfc']],
+    ['nottingham_forest', ['forest', 'nottinghamforest', 'nottinghamforestfc']],
+    ['brighton', ['brightonandhovealbion', 'brightonandhove', 'brightonhovealbion']],
+    ['newcastle', ['newcastleunited', 'newcastleunitedfc', 'newcastleutd']],
+    ['bournemouth', ['afcbournemouth']],
+    ['leeds_united', ['leeds', 'leedsunited', 'leedsunitedfc']],
+    ['sunderland', ['sunderlandafc']],
+    ['crystal_palace', ['palace', 'crystalpalacefc']],
+    ['aston_villa', ['astonvillafc', 'villa']],
+    ['brentford', ['brentfordfc']],
+    ['chelsea', ['chelseafc', 'cfc']],
+    ['everton', ['evertonfc', 'toffees']],
+    ['fulham', ['fulhamfc']],
+    ['burnley', ['burnleyfc']],
+    ['liverpool', ['liverpoolfc', 'lfc']],
+    ['arsenal', ['arsenalfc', 'gunners']],
+    ['man_city', ['manchestercity', 'mancity', 'manchestercityfc', 'mcfc', 'cityfc', 'city']],
+    ['man_utd', ['manchesterunited', 'manutd', 'manchesterunitedfc', 'mufc', 'unitedfc', 'manunited']],
+    // 其他联赛常见别名
+    ['psg', ['parissaintgermainfc', 'psg', 'parissaintgermain']],
+    ['atletico_madrid', ['clubatleticodemadrid', 'atleticomadrid', 'atletico']],
+    ['athletic_bilbao', ['athleticclub', 'athleticclubbilbao']],
+    ['inter_milan', ['inter', 'internazionale', 'fcinternazionale']],
+    ['ac_milan', ['milan']],
+    ['sporting_cp', ['sporting', 'sportinglisbon']],
+    ['usa', ['unitedstates', 'us']],
+    ['south_korea', ['korearepublic', 'korea']],
+    ['netherlands', ['holland']],
+  ];
+  for (const [teamId, aliases] of TEAM_ALIASES) {
+    if (aliases.includes(normalizedRaw) && teamsMap[teamId]) return teamId;
+  }
+
   return raw;
 }
 
@@ -2167,6 +2233,27 @@ function resolveWorldCupTeamByOutcome(outcomeText, footballTeamsMap) {
     ['juventus', ['juve']],
     // 葡超
     ['sporting_cp', ['sporting', 'sportinglisbon', 'sportingportugal']],
+    // 英超
+    ['tottenham', ['spurs', 'tottenhamhotspur', 'tottenhamhotspurfc']],
+    ['wolves', ['wolverhampton', 'wolverhamptonwanderers', 'wolverhamptonwanderersfc']],
+    ['west_ham', ['westham', 'westhamunited', 'westhamunitedfc']],
+    ['nottingham_forest', ['forest', 'nottinghamforest', 'nottinghamforestfc']],
+    ['brighton', ['brightonandhovealbion', 'brightonandhove', 'brightonhovealbion']],
+    ['newcastle', ['newcastleunited', 'newcastleunitedfc', 'newcastleutd']],
+    ['bournemouth', ['afcbournemouth']],
+    ['leeds_united', ['leeds', 'leedsunited', 'leedsunitedfc']],
+    ['sunderland', ['sunderlandafc']],
+    ['crystal_palace', ['palace', 'crystalpalacefc']],
+    ['aston_villa', ['astonvillafc', 'villa']],
+    ['brentford', ['brentfordfc']],
+    ['chelsea', ['chelseafc', 'cfc']],
+    ['everton', ['evertonfc', 'toffees']],
+    ['fulham', ['fulhamfc']],
+    ['burnley', ['burnleyfc']],
+    ['liverpool', ['liverpoolfc', 'lfc']],
+    ['arsenal', ['arsenalfc', 'gunners']],
+    ['man_city', ['manchestercity', 'mancity', 'manchestercityfc', 'mcfc', 'cityfc', 'city']],
+    ['man_utd', ['manchesterunited', 'manutd', 'manchesterunitedfc', 'mufc', 'unitedfc', 'manunited']],
   ];
 
   for (const [teamId, aliases] of manualAliases) {
@@ -2299,26 +2386,51 @@ async function buildFootballGameRowFromPolymarketLink(slugOrUrl, teamsMap) {
   if (market) {
     const outcomes = parseJsonArrayField(market?.outcomes ?? '[]', 'outcomes', slug).map(s => String(s ?? '').trim());
     const prices = parseJsonArrayField(market?.outcomePrices ?? '[]', 'outcomePrices', slug);
-    const drawLabels = new Set(['draw', 'tie']);
+
+    // 检测平局 outcome：匹配 "draw"、"tie"，也兼容 Polymarket 的 "Draw (Team A vs Team B)" 格式
+    const isDrawOutcome = (o) => {
+      const n = normalizeOutcomeToken(o);
+      return n === 'draw' || n === 'tie' || n.startsWith('draw') || n.startsWith('tie');
+    };
 
     // Determine home/away from question ("Team A vs Team B")
     const question = String(market?.question ?? '').trim();
     const vsMatch = question.match(/^(.+?)\s+vs\.?\s+(.+?)(?:\?|$)/i);
-    let homeRaw = vsMatch ? vsMatch[1].trim() : outcomes.find(o => !drawLabels.has(normalizeOutcomeToken(o))) ?? outcomes[0] ?? '';
-    let awayRaw = vsMatch ? vsMatch[2].trim() : outcomes.filter(o => !drawLabels.has(normalizeOutcomeToken(o)))[1] ?? outcomes[1] ?? '';
+    let homeRaw, awayRaw;
+    if (vsMatch) {
+      homeRaw = vsMatch[1].trim();
+      awayRaw = vsMatch[2].trim();
+    } else {
+      // 从 Draw outcome 标签提取正确主客队顺序："Draw (Home vs. Away)"
+      // Polymarket 足球 3 结果市场的 Draw label 始终保持 "主队 vs 客队" 顺序
+      const drawOutcome = outcomes.find(o => isDrawOutcome(o)) ?? '';
+      const drawVsMatch = String(drawOutcome).match(/\((.+?)\s+vs\.?\s+(.+?)\)/i);
+      if (drawVsMatch) {
+        homeRaw = drawVsMatch[1].trim();
+        awayRaw = drawVsMatch[2].trim();
+      } else {
+        // 最后兜底：按 outcomes 列表顺序（可能不准确）
+        homeRaw = outcomes.find(o => !isDrawOutcome(o)) ?? outcomes[0] ?? '';
+        awayRaw = outcomes.filter(o => !isDrawOutcome(o))[1] ?? outcomes[1] ?? '';
+      }
+    }
 
     const toOdds = (name) => {
       const idx = outcomes.findIndex(o => normalizeOutcomeToken(o) === normalizeOutcomeToken(name));
       return idx >= 0 ? Math.round(toPercentProbability(prices[idx])) : 0;
     };
-    const drawIdx = outcomes.findIndex(o => drawLabels.has(normalizeOutcomeToken(o)));
+    const drawIdx = outcomes.findIndex(o => isDrawOutcome(o));
     const drawWin = drawIdx >= 0 ? Math.round(toPercentProbability(prices[drawIdx])) : null;
 
     const resolvedHome = resolveWorldCupTeamByOutcome(homeRaw, teamsMap);
     const resolvedAway = resolveWorldCupTeamByOutcome(awayRaw, teamsMap);
 
+    // 日期：优先从 slug 末尾提取（最准确），再兜底用 API 字段
+    const slugDateMatch = slug.match(/(\d{4}-\d{2}-\d{2})$/);
+    const matchDate = slugDateMatch ? slugDateMatch[1] : extractFootballMatchDate(market, event);
+
     return {
-      date: extractNbaDateFromMarket(market),
+      date: matchDate,
       home_team: resolvedHome?.id ?? homeRaw,
       away_team: resolvedAway?.id ?? awayRaw,
       home_win: String(toOdds(homeRaw)),
@@ -2329,9 +2441,20 @@ async function buildFootballGameRowFromPolymarketLink(slugOrUrl, teamsMap) {
   }
 
   // Event (multiple yes/no markets per team)
+  // Polymarket 足球事件结构：每个 sub-market 对应一个结果（主队赢/平局/客队赢），各自是 Yes/No 市场
   const markets = Array.isArray(event?.markets) ? event.markets : [];
   const yesAliases = new Set(['yes', 'y']);
+
+  // 检测平局 label（同上 isDrawOutcome 逻辑）
+  const isDrawLabel = (label) => {
+    const n = normalizeOutcomeToken(label);
+    return n === 'draw' || n === 'tie' || n.startsWith('draw') || n.startsWith('tie');
+  };
+
   const teamEntries = [];
+  let evDrawPercent = null;
+  let evDrawLabel = '';
+
   for (const m of markets) {
     const mOutcomes = parseJsonArrayField(m?.outcomes ?? '[]', 'outcomes', slug).map(s => String(s ?? '').trim());
     const mPrices = parseJsonArrayField(m?.outcomePrices ?? '[]', 'outcomePrices', slug);
@@ -2340,9 +2463,52 @@ async function buildFootballGameRowFromPolymarketLink(slugOrUrl, teamsMap) {
     const percent = Math.round(toPercentProbability(mPrices[yesIdx]));
     const label = String(m?.groupItemTitle ?? '').trim() || extractTeamNameFromQuestion(m?.question ?? '');
     if (!label) continue;
-    teamEntries.push({ label, percent });
+
+    if (isDrawLabel(label)) {
+      // 这是平局子市场：存平局概率，从 Draw label 中提取主客队顺序
+      evDrawPercent = percent;
+      evDrawLabel = label;
+    } else {
+      teamEntries.push({ label, percent });
+    }
   }
-  teamEntries.sort((a, b) => b.percent - a.percent);
+
+  // 尝试从 Draw label 中提取主客队顺序（最可靠）
+  let evHomeRaw = '', evAwayRaw = '';
+  if (evDrawLabel) {
+    const drawVsMatch = evDrawLabel.match(/\((.+?)\s+vs\.?\s+(.+?)\)/i);
+    if (drawVsMatch) {
+      evHomeRaw = drawVsMatch[1].trim();
+      evAwayRaw = drawVsMatch[2].trim();
+    }
+  }
+
+  if (!evHomeRaw) {
+    // 兜底：按胜率降序（但主客队顺序可能不准）
+    teamEntries.sort((a, b) => b.percent - a.percent);
+    evHomeRaw = teamEntries[0]?.label ?? '';
+    evAwayRaw = teamEntries[1]?.label ?? '';
+  } else {
+    // 用从 Draw label 提取的主客队名查找对应胜率
+    const findPct = (rawName) => {
+      const n = normalizeOutcomeToken(rawName);
+      const entry = teamEntries.find(e => normalizeOutcomeToken(e.label) === n);
+      if (entry) return entry.percent;
+      // 宽松匹配：any entry whose normalized label contains the rawName's normalized tail
+      const tail = rawName.trim().split(/\s+/).pop() ?? '';
+      const tailN = normalizeOutcomeToken(tail);
+      return teamEntries.find(e => normalizeOutcomeToken(e.label).includes(tailN))?.percent ?? 0;
+    };
+    // re-sort by home/away label
+    const homePct = findPct(evHomeRaw);
+    const awayPct = findPct(evAwayRaw);
+    // assign correctly
+    evHomeRaw = evHomeRaw; // already set
+    evAwayRaw = evAwayRaw;
+    teamEntries[0] = { label: evHomeRaw, percent: homePct };
+    teamEntries[1] = { label: evAwayRaw, percent: awayPct };
+  }
+
   const homeEntry = teamEntries[0];
   const awayEntry = teamEntries[1];
   if (!homeEntry || !awayEntry) throw new Error(`无法从 Polymarket 事件解析球队数据（${slug}）`);
@@ -2350,13 +2516,16 @@ async function buildFootballGameRowFromPolymarketLink(slugOrUrl, teamsMap) {
   const resolvedHome = resolveWorldCupTeamByOutcome(homeEntry.label, teamsMap);
   const resolvedAway = resolveWorldCupTeamByOutcome(awayEntry.label, teamsMap);
 
+  const slugDateMatchEv = slug.match(/(\d{4}-\d{2}-\d{2})$/);
+  const matchDateEv = slugDateMatchEv ? slugDateMatchEv[1] : extractFootballMatchDate(null, event);
+
   return {
-    date: extractNbaDateFromMarket(null, event),
+    date: matchDateEv,
     home_team: resolvedHome?.id ?? homeEntry.label,
     away_team: resolvedAway?.id ?? awayEntry.label,
     home_win: String(homeEntry.percent),
     away_win: String(awayEntry.percent),
-    draw_win: '',
+    draw_win: evDrawPercent !== null ? String(evDrawPercent) : '',
     polymarket_slug: slug
   };
 }
@@ -2365,7 +2534,11 @@ async function buildFootballGameRowFromPolymarketLink(slugOrUrl, teamsMap) {
 async function resolveFootballLinkOnlyRows(rows, teamsMap) {
   const resolved = [];
   for (const row of rows) {
-    if (!row.link_only) {
+    // 若 away_team 或 home_team 包含 Draw 开头的字符串（上次解析写坏），强制重新解析
+    const hasCorruptedTeam = (t) => /^draw[\s(]/i.test(String(t ?? '').trim());
+    const needsReFetch = row.link_only ||
+      (row.polymarket_slug && (hasCorruptedTeam(row.home_team) || hasCorruptedTeam(row.away_team)));
+    if (!needsReFetch) {
       resolved.push(row);
       continue;
     }
@@ -3119,7 +3292,10 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
   }
 
   const headers = values[0].map(cell => String(cell ?? '').trim().toLowerCase());
-  const row = values[1].map(cell => String(cell ?? '').trim());
+
+  // 优先找第一列为 "en" 的行（用户手动填写的英文源内容），找不到才退化到 row 2
+  const enRow = values.slice(1).find(r => String(r?.[0] ?? '').trim().toLowerCase() === 'en');
+  const row = (enRow ?? values[1]).map(cell => String(cell ?? '').trim());
 
   function col(name) {
     const idx = headers.indexOf(name);
@@ -3143,9 +3319,13 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
   const cards = (cardIndexes.length > 0 ? cardIndexes : [1, 2, 3])
     .map((index) => {
       const percentRaw = Number(col(`percent_${index}`));
+      // Lark 存的是小数（0.53 = 53%），需转换为整数百分比
+      const percent = Number.isFinite(percentRaw)
+        ? (percentRaw > 0 && percentRaw <= 1 ? Math.round(percentRaw * 100) : Math.round(percentRaw))
+        : 50;
       return {
         text: sanitizeCardText(col(String(index))),
-        percent: Number.isFinite(percentRaw) ? percentRaw : 50
+        percent
       };
     });
 
@@ -3804,11 +3984,14 @@ async function writeBackTranslationsToLark(
   accessToken,
   spreadsheetToken,
   sheetId,
-  sourceLang = 'zh-CN'
+  sourceLang = 'zh-CN',
+  { includeSourceLang = false } = {}
 ) {
   const sourceLangNormalized = String(sourceLang ?? '').trim().toLowerCase();
+  // includeSourceLang=true 时把 source lang 也写回（保持其在回填区域的固定位置）
   const langs = Object.keys(translationsMap)
-    .filter(lang => String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized);
+    .filter(lang => includeSourceLang || String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized)
+    .sort();
 
   const MAX_CARDS = 4;
   const cardCount = Math.max(1, Math.min(MAX_CARDS, Array.isArray(sourceData.cards) ? sourceData.cards.length : 0));
@@ -4481,20 +4664,24 @@ async function main() {
     if (bgFiles.length === 0) {
       throw new Error(`模板 ${templateKey} 没有可用语种背景图`);
     }
-    const sourceLang = larkConfig.sourceLang;
+    // 综合事件使用专属 sourceLang（comprehensiveSourceLang），默认 en；其他模板保持 larkConfig.sourceLang
+    const sourceLang = templateKey === 'comprehensive'
+      ? (larkConfig.comprehensiveSourceLang || 'en')
+      : larkConfig.sourceLang;
     const targetLangs = bgFiles.map(f => path.parse(f).name).filter(l => l !== sourceLang);
 
     let translationsMap = { [sourceLang]: sourceData };
 
     if (targetLangs.length > 0) {
       console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
-      const translated = await translateComprehensiveData(sourceData, targetLangs, larkConfig.sourceLang);
+      const translated = await translateComprehensiveData(sourceData, targetLangs, sourceLang);
       translationsMap = { ...translationsMap, ...translated };
 
       console.log('\n回填翻译结果到 Lark 表格...');
       const writtenCount = await writeBackTranslationsToLark(
         sourceData, translationsMap,
-        accessToken, larkConfig.spreadsheetToken, sheetId, larkConfig.sourceLang
+        accessToken, larkConfig.spreadsheetToken, sheetId, sourceLang,
+        { includeSourceLang: true }
       );
       console.log(`  ✅ 已回填 ${writtenCount} 种语言（第 3 行起，A 列为语言代码）`);
     }
