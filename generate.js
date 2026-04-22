@@ -3981,6 +3981,15 @@ async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputP
   let compressed;
   try {
     compressed = compressPngWithFfmpeg(tmpPng, outputPath, MAX_SIZE_KB);
+  } catch (ffmpegErr) {
+    // ffmpeg 未安装或不可用时，直接使用原始截图作为输出（不压缩）
+    if (ffmpegErr.message.includes('ENOENT') || ffmpegErr.message.includes('ffmpeg')) {
+      console.warn(`  ⚠️  ffmpeg 未找到，跳过压缩，直接输出原始截图（体积可能较大）`);
+      fs.copyFileSync(tmpPng, outputPath);
+      compressed = { sizeKB: Math.round(fs.statSync(outputPath).size / 1024), profile: 'uncompressed' };
+    } else {
+      throw ffmpegErr;
+    }
   } finally {
     if (fs.existsSync(tmpPng)) fs.unlinkSync(tmpPng);
   }
