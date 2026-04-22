@@ -1,7 +1,6 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const sharp = require('sharp');
 const { execSync, execFileSync } = require('child_process');
 
 const MAX_SIZE_KB = 300;
