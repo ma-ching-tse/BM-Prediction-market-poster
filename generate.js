@@ -3272,7 +3272,7 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
   }
 
   const spreadsheetToken = config.spreadsheetToken;
-  const range = encodeURIComponent(`${resolvedSheetId}!A1:L35`);
+  const range = encodeURIComponent(`${resolvedSheetId}!A1:Z35`);
   const url = `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${spreadsheetToken}/values/${range}?valueRenderOption=ToString&dateTimeRenderOption=FormattedString`;
 
   const res = await fetch(url, {
@@ -3302,6 +3302,13 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
     return idx !== -1 ? row[idx] : '';
   }
 
+  // 图片 URL 是语言无关的，始终从第 2 行（原始数据行）读取
+  const baseRow = values[1].map(cell => String(cell ?? '').trim());
+  function rawCol(name) {
+    const idx = headers.indexOf(name);
+    return idx !== -1 ? baseRow[idx] : '';
+  }
+
   const MAX_CARDS = 4;
   const cardIndexes = headers
     .map((header) => {
@@ -3325,7 +3332,8 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
         : 50;
       return {
         text: sanitizeCardText(col(String(index))),
-        percent
+        percent,
+        image: rawCol(`image_${index}`)
       };
     });
 
@@ -3353,27 +3361,56 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
     }
   }
 
+  // 读取表格里已有的翻译行（row 3+，A 列为语言代码）
+  const existingTranslations = {};
+  for (const translatedRow of values.slice(2)) {
+    const lang = String(translatedRow?.[0] ?? '').trim().toLowerCase();
+    if (!lang) continue;
+    const r = translatedRow.map(cell => String(cell ?? '').trim());
+    const colByIdx = (idx) => r[idx] ?? '';
+    const cardIndexesForTranslation = cardIndexes.length > 0 ? cardIndexes : [1, 2, 3];
+    existingTranslations[lang] = {
+      mainTitle: colByIdx(headers.indexOf('main title')),
+      subTitle: colByIdx(headers.indexOf('sub title')),
+      footer: colByIdx(headers.indexOf('footer')),
+      cards: cardIndexesForTranslation.map((index, i) => ({
+        text: sanitizeCardText(colByIdx(headers.indexOf(String(index)))),
+        percent: cards[i]?.percent ?? 50
+      }))
+    };
+  }
+
   return {
     mainTitle: col('main title'),
     subTitle: col('sub title'),
     footer: col('footer'),
-    cards
+    cards,
+    existingTranslations
   };
 }
 
 // ── 综合事件：调用 MyMemory 免费翻译（无需 API Key）──────────
-async function translateOneText(text, fromLang, toLang) {
+async function translateOneText(text, fromLang, toLang, retries = 3) {
   if (!text) return text;
   const params = new URLSearchParams({ q: text, langpair: `${fromLang}|${toLang}` });
-  const res = await fetch(`https://api.mymemory.translated.net/get?${params}`);
-  if (!res.ok) {
-    throw new Error(`MyMemory 翻译请求失败（${fromLang}→${toLang}）：HTTP ${res.status}`);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`https://api.mymemory.translated.net/get?${params}`);
+    if (res.status === 429) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+        continue;
+      }
+      throw new Error(`MyMemory 翻译请求失败（${fromLang}→${toLang}）：HTTP ${res.status}`);
+    }
+    if (!res.ok) {
+      throw new Error(`MyMemory 翻译请求失败（${fromLang}→${toLang}）：HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.responseStatus !== 200) {
+      throw new Error(`MyMemory 翻译失败（${fromLang}→${toLang}）：${data.responseDetails}`);
+    }
+    return String(data.responseData?.translatedText ?? text);
   }
-  const data = await res.json();
-  if (data.responseStatus !== 200) {
-    throw new Error(`MyMemory 翻译失败（${fromLang}→${toLang}）：${data.responseDetails}`);
-  }
-  return String(data.responseData?.translatedText ?? text);
 }
 
 async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'zh-CN') {
@@ -4051,6 +4088,35 @@ async function writeBackTranslationsToLark(
   return translatedRows.length;
 }
 
+// ── 综合事件：下载并裁剪卡片图片 URL → 本地临时文件 ────────────
+async function downloadAndCropCardImages(cards) {
+  const sharp = require('sharp');
+  const tmpDir = path.join(BASE_DIR, '_tmp_card_images');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+  await Promise.all(cards.map(async (card, i) => {
+    const url = String(card.image || '').trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+
+    const ext = url.split('?')[0].split('.').pop().split('/').pop().toLowerCase();
+    const filename = `card_${i}_${Date.now()}.jpg`;
+    const destPath = path.join(tmpDir, filename);
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      await sharp(buffer)
+        .resize(185, 189, { fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 90 })
+        .toFile(destPath);
+      card.resolvedImage = `file://${destPath}`;
+    } catch (err) {
+      console.warn(`  ⚠️  卡片 ${i + 1} 图片下载失败（${url}）：${err.message}`);
+    }
+  }));
+}
+
 // ── 综合事件：构建海报 payload ──────────────────────────────
 function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig, templateKey = 'comprehensive') {
   const templateCopy = copyConfig?.[templateKey] ?? copyConfig?.comprehensive ?? {};
@@ -4127,7 +4193,7 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
         image: templateKey === 'worldcup'
           ? (String(sourceData.cards?.[i]?.image ?? '').trim()
             || resolveWorldCupLogoPath(sourceData.cards?.[i]?.text ?? card.text, i))
-          : (resolveComprehensiveLogoPath(i) || String(defaultCopy.cards?.[i]?.image ?? '').trim()),
+          : (String(sourceData.cards?.[i]?.resolvedImage ?? '').trim() || resolveComprehensiveLogoPath(i) || String(defaultCopy.cards?.[i]?.image ?? '').trim()),
         valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
       }))
     }
@@ -4654,6 +4720,12 @@ async function main() {
     const sourceData = await fetchComprehensiveEventsFromLark(larkConfig, accessToken, sheetId, sheetFieldLabel, templateKey);
     console.log(`  ✅ 已读取${templateLabel}数据`);
 
+    if (sourceData.cards.some(c => String(c.image || '').startsWith('http'))) {
+      console.log('\n下载并裁剪卡片图片...');
+      await downloadAndCropCardImages(sourceData.cards);
+      console.log('  ✅ 卡片图片处理完成');
+    }
+
     const bgDir = templateConfig.bgDir || BG_DIR;
     const rawBgFiles = scanBgFiles(bgDir);
     const bgFiles = rawBgFiles.filter((bgFile) => {
@@ -4672,9 +4744,22 @@ async function main() {
 
     let translationsMap = { [sourceLang]: sourceData };
 
-    if (targetLangs.length > 0) {
-      console.log(`\n正在翻译 ${targetLangs.length} 种语言（${targetLangs.join(', ')}）...`);
-      const translated = await translateComprehensiveData(sourceData, targetLangs, sourceLang);
+    // 优先使用表格里已有的翻译，缺失的语种才调翻译 API
+    const existing = sourceData.existingTranslations ?? {};
+    const missingLangs = targetLangs.filter(l => {
+      const e = existing[l.toLowerCase()];
+      return !e || !e.mainTitle;
+    });
+
+    for (const [lang, data] of Object.entries(existing)) {
+      if (targetLangs.map(l => l.toLowerCase()).includes(lang)) {
+        translationsMap[lang] = data;
+      }
+    }
+
+    if (missingLangs.length > 0) {
+      console.log(`\n正在翻译 ${missingLangs.length} 种语言（${missingLangs.join(', ')}）...`);
+      const translated = await translateComprehensiveData(sourceData, missingLangs, sourceLang);
       translationsMap = { ...translationsMap, ...translated };
 
       console.log('\n回填翻译结果到 Lark 表格...');
@@ -4684,6 +4769,8 @@ async function main() {
         { includeSourceLang: true }
       );
       console.log(`  ✅ 已回填 ${writtenCount} 种语言（第 3 行起，A 列为语言代码）`);
+    } else {
+      console.log(`\n✅ 已使用表格中的现有翻译（${Object.keys(translationsMap).length} 种语言）`);
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
