@@ -4283,10 +4283,25 @@ async function main() {
     }
 
     const bgDir = templateConfig.bgDir || WORLD_CUP_BG_DIR;
-    const bgFiles = scanBgFiles(bgDir);
-    const langBgMap = Object.fromEntries(bgFiles.map(file => [path.parse(file).name, file]));
-    const langsToGenerate = Object.keys(langBgMap).filter(lang => lang !== 'bg');
-    const targetLangs = langsToGenerate.filter(lang => lang !== sourceLang);
+    const FOOTBALL_KNOWN_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi']);
+    const FOOTBALL_ALL_TARGET_LANGS = ['zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi'];
+
+    const footballLangBgMap = {};
+    let footballGenericBgPath = '';
+    const footballBgFileNames = scanBgFiles(bgDir);
+    for (const f of footballBgFileNames) {
+      const lang = path.parse(f).name;
+      if (FOOTBALL_KNOWN_LANGS.has(lang)) {
+        footballLangBgMap[lang] = path.join(bgDir, f);
+      } else if (!footballGenericBgPath) {
+        footballGenericBgPath = path.join(bgDir, f);
+      }
+    }
+    const footballHasLangBg = Object.keys(footballLangBgMap).length > 0;
+    const targetLangs = footballHasLangBg
+      ? Object.keys(footballLangBgMap).filter(l => l !== sourceLang)
+      : FOOTBALL_ALL_TARGET_LANGS;
+    const langsToGenerate = [sourceLang, ...targetLangs];
 
     let translationsMap = { [sourceLang]: sourceData };
     if (targetLangs.length > 0) {
@@ -4317,8 +4332,9 @@ async function main() {
 
     console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
     for (const lang of langsToGenerate) {
-      const bgFile = langBgMap[lang];
-      const bgPath = bgFile ? path.join(bgDir, bgFile) : '';
+      const bgPath = footballHasLangBg
+        ? (footballLangBgMap[lang] || footballGenericBgPath || '')
+        : (footballGenericBgPath || '');
       const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
       const posterPayload = buildFootballPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
@@ -4522,11 +4538,27 @@ async function main() {
   }
 
   const bgDir = templateConfig.bgDir || BG_DIR;
-  const bgFiles = scanBgFiles(bgDir);
+  const NBA_KNOWN_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi']);
+  const NBA_ALL_TARGET_LANGS = ['zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi'];
+
+  const nbaLangBgMap = {};
+  let nbaGenericBgPath = '';
+  const nbaBgFileNames = scanBgFiles(bgDir);
+  for (const f of nbaBgFileNames) {
+    const lang = path.parse(f).name;
+    if (NBA_KNOWN_LANGS.has(lang)) {
+      nbaLangBgMap[lang] = path.join(bgDir, f);
+    } else if (!nbaGenericBgPath) {
+      nbaGenericBgPath = path.join(bgDir, f);
+    }
+  }
+  const nbaHasLangBg = Object.keys(nbaLangBgMap).length > 0;
   const sourceLang = String(larkConfig.sourceLang || 'zh-CN').trim();
-  const targetLangs = bgFiles
-    .map(file => path.parse(file).name)
-    .filter(lang => lang !== sourceLang);
+  const targetLangs = nbaHasLangBg
+    ? Object.keys(nbaLangBgMap).filter(l => l !== sourceLang)
+    : NBA_ALL_TARGET_LANGS;
+  const langsToGenerate = [sourceLang, ...targetLangs];
+
   let translationsMap = { [sourceLang]: classicData.sourceData };
   if (targetLangs.length > 0) {
     console.log('\n翻译 NBA 标题、副标题和 footer...');
@@ -4557,17 +4589,18 @@ async function main() {
   const page = await browser.newPage();
   await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
-  console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
-  for (const bgFile of bgFiles) {
-    const lang = path.parse(bgFile).name;
-    const bgPath = path.join(bgDir, bgFile);
+  console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+  for (const lang of langsToGenerate) {
+    const bgPath = nbaHasLangBg
+      ? (nbaLangBgMap[lang] || nbaGenericBgPath || '')
+      : (nbaGenericBgPath || '');
     const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
     const posterPayload = buildClassicPosterPayload(gamesRows, teamsMap, lang, classicData.sourceData, translationsMap, copyConfig);
     await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
   }
 
   await browser.close();
-  buildZip(dateDir, outputPrefixWithDate, bgFiles);
+  buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.png`));
 }
 
 main().catch(err => {

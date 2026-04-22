@@ -146,10 +146,14 @@ function handlePreviewHtml(req, res) {
 
     const bgDirName = PREVIEW_BG_DIRS[templateKey];
     const bgFile = bgDirName ? pickBgFile(path.join(__dirname, bgDirName)) : null;
+
+    // Inject base tag so all relative asset paths (team icons, logos, images) resolve correctly
+    const baseTag = `<base href="http://localhost:${PORT}/">`;
     const bgInject = bgFile
       ? `<script>window.BG_PATH = "http://localhost:${PORT}/${bgDirName}/${bgFile}";</script>`
       : '';
 
+    html = html.replace('<head>', `<head>\n  ${baseTag}`);
     if (bgInject) {
       html = html.replace('</head>', bgInject + '\n</head>');
     }
