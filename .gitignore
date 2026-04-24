@@ -3,3 +3,5 @@ node_modules/
 output/
 .DS_Store
 _tmp_poster.html
+_tmp_card_images/
+.claude/worktrees/

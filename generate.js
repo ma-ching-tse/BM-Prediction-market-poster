@@ -4751,10 +4751,9 @@ async function main() {
       return !e || !e.mainTitle;
     });
 
-    for (const [lang, data] of Object.entries(existing)) {
-      if (targetLangs.map(l => l.toLowerCase()).includes(lang)) {
-        translationsMap[lang] = data;
-      }
+    for (const targetLang of targetLangs) {
+      const data = existing[targetLang.toLowerCase()];
+      if (data) translationsMap[targetLang] = data;
     }
 
     if (missingLangs.length > 0) {
