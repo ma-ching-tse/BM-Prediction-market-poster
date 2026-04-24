@@ -4,7 +4,9 @@
       "key": "classic",
       "name": "NBA 赛事",
       "file": "poster.html",
+      "horizontalFile": "poster.nba-horizontal.html",
       "previewUrl": "http://localhost:3001/poster.html",
+      "horizontalPreviewUrl": "http://localhost:3001/poster.nba-horizontal.html",
       "outputDir": "output/NBA/",
       "script": "npm run generate:nba"
     },

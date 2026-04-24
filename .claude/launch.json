@@ -8,6 +8,12 @@
       "port": 3001
     },
     {
+      "name": "预览横版 HTML（worktree）",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", ".", "-p", "3011", "--cors", "-c-1"],
+      "port": 3011
+    },
+    {
       "name": "预览代理服务器（含 Polymarket 代理）",
       "runtimeExecutable": "node",
       "runtimeArgs": ["proxy.js"],

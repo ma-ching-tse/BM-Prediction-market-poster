@@ -1,79 +1,53 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
-const { execSync, execFileSync } = require('child_process');
+const { execSync } = require('child_process');
 
 const MAX_SIZE_KB = 300;
 const POLYMARKET_BASE_URL = 'https://gamma-api.polymarket.com';
-const OUTPUT_SIZE = 1100;
-const PNG_COLOR_CANDIDATES = [256, 224, 192, 160, 128, 112, 96, 80, 64, 48, 32];
 
-function runFfmpeg(args) {
-  execFileSync('ffmpeg', args, {
-    stdio: 'ignore'
-  });
-}
+// ── sharp 方案：缩放到指定尺寸，并对 JPEG 质量进行二分，逼近 maxKB 上限 ──
+async function compressToJpegWithSharp(inputPath, outputPath, maxKB, outputSize) {
+  const sharp = require('sharp');
+  const outW = Number(outputSize.width);
+  const outH = Number(outputSize.height);
 
-// ── ffmpeg 方案：缩放到 OUTPUT_SIZE x OUTPUT_SIZE，并通过调色板压缩 PNG ───────────
-function compressPngWithFfmpeg(inputPath, outputPath, maxKB = MAX_SIZE_KB) {
-  const outputDir = path.dirname(outputPath);
-  const stem = path.basename(outputPath, path.extname(outputPath));
-  const palettePath = path.join(outputDir, `${stem}__palette.png`);
-  const candidatePath = path.join(outputDir, `${stem}__candidate.png`);
+  const render = async (quality) => {
+    return await sharp(inputPath)
+      .resize(outW, outH, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality, chromaSubsampling: '4:4:4', mozjpeg: true })
+      .toBuffer();
+  };
 
-  let bestSizeKB = Number.POSITIVE_INFINITY;
-  let bestColors = PNG_COLOR_CANDIDATES[PNG_COLOR_CANDIDATES.length - 1];
-  let foundUnderLimit = false;
+  // 先看最高质量能不能直接过（常见情况可避免二分）
+  let bestBuf = await render(95);
+  let bestQuality = 95;
+  let bestSizeKB = Math.round(bestBuf.length / 1024);
 
-  try {
-    for (const colors of PNG_COLOR_CANDIDATES) {
-      runFfmpeg([
-        '-y',
-        '-i', inputPath,
-        '-vf', `scale=${OUTPUT_SIZE}:${OUTPUT_SIZE}:flags=lanczos,palettegen=max_colors=${colors}:stats_mode=full`,
-        palettePath
-      ]);
-
-      runFfmpeg([
-        '-y',
-        '-i', inputPath,
-        '-i', palettePath,
-        '-lavfi', `scale=${OUTPUT_SIZE}:${OUTPUT_SIZE}:flags=lanczos[x];[x][1:v]paletteuse=dither=sierra2_4a`,
-        '-frames:v', '1',
-        '-c:v', 'png',
-        '-compression_level', '9',
-        candidatePath
-      ]);
-
-      const sizeKB = Math.round(fs.statSync(candidatePath).size / 1024);
-      if (sizeKB < bestSizeKB) {
-        bestSizeKB = sizeKB;
-        bestColors = colors;
-        fs.copyFileSync(candidatePath, outputPath);
-      }
-
-      if (sizeKB <= maxKB) {
-        foundUnderLimit = true;
-        bestSizeKB = sizeKB;
-        bestColors = colors;
-        fs.copyFileSync(candidatePath, outputPath);
-        break;
+  if (bestSizeKB > maxKB) {
+    // 二分 [40, 95]，找出 ≤ maxKB 的最高质量
+    let lo = 40;
+    let hi = 95;
+    while (lo <= hi) {
+      const mid = Math.round((lo + hi) / 2);
+      const buf = await render(mid);
+      const kb = Math.round(buf.length / 1024);
+      if (kb <= maxKB) {
+        bestBuf = buf;
+        bestQuality = mid;
+        bestSizeKB = kb;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
       }
     }
-  } catch (err) {
-    throw new Error(`ffmpeg 压缩失败：${err.message}`);
-  } finally {
-    if (fs.existsSync(palettePath)) fs.unlinkSync(palettePath);
-    if (fs.existsSync(candidatePath)) fs.unlinkSync(candidatePath);
   }
 
-  if (!fs.existsSync(outputPath)) {
-    throw new Error(`ffmpeg 压缩失败：未生成输出文件 ${path.basename(outputPath)}`);
-  }
+  fs.writeFileSync(outputPath, bestBuf);
 
   return {
     sizeKB: bestSizeKB,
-    profile: `${foundUnderLimit ? 'within-limit' : 'best-effort'}/c${bestColors}`
+    profile: bestSizeKB <= maxKB ? `within-limit/q${bestQuality}` : `best-effort/q${bestQuality}`
   };
 }
 
@@ -103,6 +77,8 @@ const TEMPLATE_CONFIGS = {
   classic: {
     aliases: ['classic', 'default', '标准', '默认'],
     file: path.join(BASE_DIR, 'poster.html'),
+    horizontalFile: path.join(BASE_DIR, 'poster.nba-horizontal.html'),
+    horizontalBgDir: path.join(BASE_DIR, 'backgrounds-NBA-horizontal'),
     outputPrefix: 'NBA',
     outputSubDir: 'NBA'
   },
@@ -1339,16 +1315,34 @@ function buildGamesData(gamesRows, teamsMap, lang) {
   });
 }
 
-function buildClassicPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig) {
+function buildClassicPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig, options = {}) {
+  const layout = options.layout === 'horizontal' ? 'horizontal' : 'vertical';
   const templateCopy = copyConfig?.classic ?? {};
   const defaultCopy = templateCopy?.default ?? {};
   const langCopy = templateCopy?.[lang] ?? {};
   const mergedCopy = { ...defaultCopy, ...langCopy };
   const translated = translationsMap?.[lang] ?? sourceData ?? {};
 
-  return {
-    games: buildGamesData(gamesRows, teamsMap, lang),
-    copy: {
+  const baseGames = buildGamesData(gamesRows, teamsMap, lang);
+  const translatedMatchTexts = Array.isArray(translated.matchTexts) ? translated.matchTexts : [];
+  const games = baseGames.map((game, idx) => ({
+    ...game,
+    reward: String(translatedMatchTexts[idx]?.reward ?? '').trim(),
+    news: String(translatedMatchTexts[idx]?.news ?? '').trim()
+  }));
+
+  const copy = layout === 'horizontal'
+    ? {
+      title: String(translated.mainTitle ?? '').trim(),
+      subtitle: String(translated.subTitle ?? '').trim(),
+      footer: String(translated.footer ?? '').trim(),
+      titleFontSize: Number(mergedCopy?.horizontalTitleFontSize ?? 150),
+      titleLineHeight: Number(mergedCopy?.horizontalTitleLineHeight ?? 1.2),
+      titleMaxWidth: Number(mergedCopy?.horizontalTitleMaxWidth ?? 1080),
+      subtitleFontSize: Number(mergedCopy?.horizontalSubtitleFontSize ?? 56),
+      subtitleLineHeight: Number(mergedCopy?.horizontalSubtitleLineHeight ?? 1.3)
+    }
+    : {
       title: String(translated.mainTitle ?? '').trim(),
       subtitle: String(translated.subTitle ?? '').trim(),
       footer: String(translated.footer ?? '').trim(),
@@ -1357,8 +1351,9 @@ function buildClassicPosterPayload(gamesRows, teamsMap, lang, sourceData, transl
       titleMaxWidth: Number(mergedCopy?.titleMaxWidth ?? 860),
       subtitleFontSize: Number(mergedCopy?.subtitleFontSize ?? 46),
       subtitleLineHeight: Number(mergedCopy?.subtitleLineHeight ?? 1.3)
-    }
-  };
+    };
+
+  return { games, copy };
 }
 
 function buildPosterPayload(gamesRows, teamsMap, lang, templateKey, copyConfig) {
@@ -1519,7 +1514,13 @@ async function fetchClassicDataFromLark(config, accessToken, sourceLang = 'zh-CN
     match3_away: ['match3_away', 'match_3_away'],
     match3_date: ['match3_date', 'match_3_date'],
     match3_home_win: ['match3_home_win', 'match_3_home_win'],
-    match3_away_win: ['match3_away_win', 'match_3_away_win']
+    match3_away_win: ['match3_away_win', 'match_3_away_win'],
+    match1_reward: ['match1_reward', 'match_1_reward'],
+    match1_news: ['match1_news', 'match_1_news'],
+    match2_reward: ['match2_reward', 'match_2_reward'],
+    match2_news: ['match2_news', 'match_2_news'],
+    match3_reward: ['match3_reward', 'match_3_reward'],
+    match3_news: ['match3_news', 'match_3_news']
   };
 
   for (const [key, aliases] of Object.entries(fieldAliases)) {
@@ -1527,11 +1528,20 @@ async function fetchClassicDataFromLark(config, accessToken, sourceLang = 'zh-CN
     if (index !== -1) headerIndexes[key] = index;
   }
 
+  const matchTexts = [];
+  for (let i = 1; i <= 3; i++) {
+    matchTexts.push({
+      reward: getField(`match${i}_reward`, `match_${i}_reward`),
+      news: getField(`match${i}_news`, `match_${i}_news`)
+    });
+  }
+
   return {
     sourceData: {
       mainTitle: getField('title', 'main title', 'main_title', 'mian title', 'mian_title'),
       subTitle: getField('subtitle', 'sub title', 'sub_title'),
-      footer: getField('footer', 'foot')
+      footer: getField('footer', 'foot'),
+      matchTexts
     },
     matchInputs,
     headerIndexes,
@@ -1825,16 +1835,30 @@ async function writeBackClassicMatchesToLark(gamesRows, headerIndexes, larkConte
 }
 
 async function translateClassicTitles(sourceData, targetLangs, fromLang = 'zh-CN') {
-  const texts = [sourceData.mainTitle, sourceData.subTitle, sourceData.footer];
+  const matchTexts = Array.isArray(sourceData.matchTexts) ? sourceData.matchTexts : [];
+  const baseTexts = [sourceData.mainTitle, sourceData.subTitle, sourceData.footer];
+  const matchFlat = [];
+  for (const mt of matchTexts) {
+    matchFlat.push(mt?.reward ?? '', mt?.news ?? '');
+  }
+  const allTexts = [...baseTexts, ...matchFlat];
   const result = {};
 
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(texts.map(text => translateOneText(text, fromLang, lang)));
+    const translated = await Promise.all(allTexts.map(text => translateOneText(text, fromLang, lang)));
+    const translatedMatchTexts = [];
+    for (let i = 0; i < matchTexts.length; i++) {
+      translatedMatchTexts.push({
+        reward: translated[3 + i * 2] ?? '',
+        news: translated[3 + i * 2 + 1] ?? ''
+      });
+    }
     result[lang] = {
       mainTitle: translated[0],
       subTitle: translated[1],
-      footer: translated[2]
+      footer: translated[2],
+      matchTexts: translatedMatchTexts
     };
     console.log(' ✅');
   }
@@ -1842,7 +1866,7 @@ async function translateClassicTitles(sourceData, targetLangs, fromLang = 'zh-CN
   return result;
 }
 
-async function writeBackClassicTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId, sourceLang = 'zh-CN') {
+async function writeBackClassicTranslationsToLark(sourceData, translationsMap, accessToken, spreadsheetToken, sheetId, sourceLang = 'zh-CN', headerIndexes = {}) {
   const sourceLangNormalized = String(sourceLang ?? '').trim().toLowerCase();
   const langs = Object.keys(translationsMap)
     .filter(lang => String(lang ?? '').trim().toLowerCase() !== sourceLangNormalized);
@@ -1878,6 +1902,36 @@ async function writeBackClassicTranslationsToLark(sourceData, translationsMap, a
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.code !== 0) {
     throw new Error(`NBA 翻译回填 Lark 失败：${data.msg || res.status}`);
+  }
+
+  // 回填每场比赛的 reward/news 翻译（位置与源行同列，按语种逐行写入）
+  const rewardNewsFields = [];
+  for (let i = 1; i <= 3; i++) {
+    rewardNewsFields.push(
+      { key: `match${i}_reward`, matchIdx: i - 1, type: 'reward' },
+      { key: `match${i}_news`, matchIdx: i - 1, type: 'news' }
+    );
+  }
+
+  for (let langIdx = 0; langIdx < langs.length; langIdx++) {
+    const lang = langs[langIdx];
+    const rowNumber = startRow + langIdx;
+    const translated = translationsMap[lang] ?? {};
+    const matchTexts = Array.isArray(translated.matchTexts) ? translated.matchTexts : [];
+
+    for (const field of rewardNewsFields) {
+      const colIdx = headerIndexes[field.key];
+      if (!Number.isInteger(colIdx)) continue;
+      const value = String(matchTexts[field.matchIdx]?.[field.type] ?? '');
+      const colA1 = indexToColumnLabel(colIdx);
+      await updateLarkCellValue({
+        accessToken,
+        spreadsheetToken,
+        sheetId,
+        a1Cell: `${colA1}${rowNumber}`,
+        value
+      });
+    }
   }
 
   return translatedRows.length;
@@ -4201,7 +4255,20 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
 }
 
 // ── 生成单张海报 ──────────────────────────────────────────
-async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath) {
+async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath, options = {}) {
+  const viewportWidth = Number(options.viewportWidth ?? 1200);
+  const viewportHeight = Number(options.viewportHeight ?? 1200);
+  const outputWidth = Number(options.outputWidth ?? viewportWidth);
+  const outputHeight = Number(options.outputHeight ?? viewportHeight);
+
+  if (options.viewportWidth || options.viewportHeight) {
+    await page.setViewport({
+      width: viewportWidth,
+      height: viewportHeight,
+      deviceScaleFactor: Number(options.deviceScaleFactor ?? 2)
+    });
+  }
+
   const injection = `<script>window.GAMES_DATA = ${JSON.stringify(posterPayload)}; window.BG_PATH = "file://${bgPath}";</script>`;
   let html = htmlTemplate.replace('</head>', injection + '\n</head>');
 
@@ -4219,32 +4286,23 @@ async function generatePoster(page, htmlTemplate, posterPayload, bgPath, outputP
 
   await new Promise(r => setTimeout(r, 300));
 
-  const tmpPng = outputPath.replace(/\.png$/i, '') + '_raw.png';
+  const tmpPng = outputPath.replace(/\.(png|jpg|jpeg)$/i, '') + '_raw.png';
   await page.screenshot({
     path: tmpPng,
-    clip: { x: 0, y: 0, width: 1200, height: 1200 }
+    clip: { x: 0, y: 0, width: viewportWidth, height: viewportHeight }
   });
 
   fs.unlinkSync(tmpFile);
 
   let compressed;
   try {
-    compressed = compressPngWithFfmpeg(tmpPng, outputPath, MAX_SIZE_KB);
-  } catch (ffmpegErr) {
-    // ffmpeg 未安装或不可用时，直接使用原始截图作为输出（不压缩）
-    if (ffmpegErr.message.includes('ENOENT') || ffmpegErr.message.includes('ffmpeg')) {
-      console.warn(`  ⚠️  ffmpeg 未找到，跳过压缩，直接输出原始截图（体积可能较大）`);
-      fs.copyFileSync(tmpPng, outputPath);
-      compressed = { sizeKB: Math.round(fs.statSync(outputPath).size / 1024), profile: 'uncompressed' };
-    } else {
-      throw ffmpegErr;
-    }
+    compressed = await compressToJpegWithSharp(tmpPng, outputPath, MAX_SIZE_KB, { width: outputWidth, height: outputHeight });
   } finally {
     if (fs.existsSync(tmpPng)) fs.unlinkSync(tmpPng);
   }
 
-  const { sizeKB: pngSizeKB, profile } = compressed;
-  console.log(`  ✅ ${path.basename(outputPath)} (png=${pngSizeKB}KB, profile=${profile}, size=${OUTPUT_SIZE}x${OUTPUT_SIZE})`);
+  const { sizeKB, profile } = compressed;
+  console.log(`  ✅ ${path.basename(outputPath)} (jpg=${sizeKB}KB, profile=${profile}, size=${outputWidth}x${outputHeight})`);
 }
 
 // ── 公共：扫描背景图、创建输出目录、启动浏览器 ──────────────
@@ -4278,7 +4336,7 @@ function buildZip(dateDir, outputPrefixWithDate, bgFiles) {
   const zipName = `${outputPrefixWithDate}.zip`;
   const zipPath = path.join(dateDir, zipName);
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-  const files = bgFiles.map(f => `"${outputPrefixWithDate}_${path.parse(f).name}.png"`).join(' ');
+  const files = bgFiles.map(f => `"${outputPrefixWithDate}_${path.parse(f).name}.jpg"`).join(' ');
   execSync(`cd "${dateDir}" && zip "${zipName}" ${files}`);
   const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
   console.log(`\n📦 ${zipName} (${zipKB}KB)`);
@@ -4386,13 +4444,13 @@ async function main() {
       const bgPath = hasLangBg
         ? (langBgMap[lang] || genericBgPath || '')
         : (genericBgPath || '');
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const posterPayload = buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, copyConfig);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.png`));
+    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.jpg`));
     return;
   }
 
@@ -4488,13 +4546,13 @@ async function main() {
       const bgPath = hasLangBg
         ? (langBgMap[lang] || genericBgPath || '')
         : (genericBgPath || '');
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const posterPayload = buildF1DriverPosterPayload(sourceData, translationsMap, driversMap, lang, copyConfig);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.png`));
+    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.jpg`));
     return;
   }
 
@@ -4592,13 +4650,13 @@ async function main() {
       const bgPath = footballHasLangBg
         ? (footballLangBgMap[lang] || footballGenericBgPath || '')
         : (footballGenericBgPath || '');
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const posterPayload = buildFootballPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(lang => `${lang}.png`));
+    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(lang => `${lang}.jpg`));
     return;
   }
 
@@ -4648,7 +4706,7 @@ async function main() {
     for (const bgFile of bgFiles) {
       const lang = path.parse(bgFile).name;
       const bgPath = path.join(bgDir, bgFile);
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const payload = buildCoinPricePosterPayload(sourceData, translationsMap, lang, templateConfig);
       await generatePoster(page, htmlTemplate, payload, bgPath, outputPath);
     }
@@ -4693,7 +4751,7 @@ async function main() {
     for (const bgFile of bgFiles) {
       const lang = path.parse(bgFile).name;
       const bgPath = path.join(bgDir, bgFile);
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const cards = cardsByLang[lang] || sourceCards;
       const payload = buildGlobalPosterPayload(cards, templateConfig);
       await generatePoster(page, htmlTemplate, payload, bgPath, outputPath);
@@ -4785,7 +4843,7 @@ async function main() {
     for (const bgFile of bgFiles) {
       const lang = path.parse(bgFile).name;
       const bgPath = path.join(bgDir, bgFile);
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
+      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const posterPayload = buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig, templateKey);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
     }
@@ -4819,25 +4877,13 @@ async function main() {
   }
 
   const bgDir = templateConfig.bgDir || BG_DIR;
-  const NBA_KNOWN_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi']);
   const NBA_ALL_TARGET_LANGS = ['zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi'];
 
-  const nbaLangBgMap = {};
-  let nbaGenericBgPath = '';
+  // 竖版所有语言共用一张背景图（取 bgDir 下第一张图）
   const nbaBgFileNames = scanBgFiles(bgDir);
-  for (const f of nbaBgFileNames) {
-    const lang = path.parse(f).name;
-    if (NBA_KNOWN_LANGS.has(lang)) {
-      nbaLangBgMap[lang] = path.join(bgDir, f);
-    } else if (!nbaGenericBgPath) {
-      nbaGenericBgPath = path.join(bgDir, f);
-    }
-  }
-  const nbaHasLangBg = Object.keys(nbaLangBgMap).length > 0;
+  const verticalBgPath = path.join(bgDir, nbaBgFileNames[0]);
   const sourceLang = String(larkConfig.sourceLang || 'zh-CN').trim();
-  const targetLangs = nbaHasLangBg
-    ? Object.keys(nbaLangBgMap).filter(l => l !== sourceLang)
-    : NBA_ALL_TARGET_LANGS;
+  const targetLangs = NBA_ALL_TARGET_LANGS.filter(l => l !== sourceLang);
   const langsToGenerate = [sourceLang, ...targetLangs];
 
   let translationsMap = { [sourceLang]: classicData.sourceData };
@@ -4853,7 +4899,8 @@ async function main() {
       accessToken,
       classicData.larkContext.spreadsheetToken,
       classicData.larkContext.sheetId,
-      sourceLang
+      sourceLang,
+      classicData.headerIndexes
     );
     if (translationWrittenCount > 0) {
       console.log(`  ✅ 已回填 Lark 表格 ${translationWrittenCount} 行翻译`);
@@ -4861,27 +4908,76 @@ async function main() {
   }
 
   validateWinRates(gamesRows);
-  const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+  const verticalTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+  const horizontalFile = templateConfig.horizontalFile;
+  const horizontalTemplate = horizontalFile && fs.existsSync(horizontalFile)
+    ? fs.readFileSync(horizontalFile, 'utf8')
+    : '';
+
+  // 横版背景：所有语言共用一张图（取 horizontalBgDir 下第一张图）
+  let horizontalBgPath = '';
+  const horizontalBgDir = templateConfig.horizontalBgDir;
+  if (horizontalTemplate && horizontalBgDir && fs.existsSync(horizontalBgDir)) {
+    const horizontalBgFiles = fs.readdirSync(horizontalBgDir).filter(f => /\.(png|jpg|jpeg)$/i.test(f));
+    if (horizontalBgFiles.length > 0) {
+      horizontalBgPath = path.join(horizontalBgDir, horizontalBgFiles[0]);
+    }
+  }
+  if (horizontalTemplate && !horizontalBgPath) {
+    console.warn('⚠️  未找到横版背景图（backgrounds-NBA-horizontal/），横版将使用纯黑背景');
+  }
+
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
   const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
 
   const browser = await launchBrowser();
   const page = await browser.newPage();
-  await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
-  console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+  const generatedFiles = [];
+
+  console.log(`\n生成竖版 1:1 海报（${langsToGenerate.length} 个语种）：`);
   for (const lang of langsToGenerate) {
-    const bgPath = nbaHasLangBg
-      ? (nbaLangBgMap[lang] || nbaGenericBgPath || '')
-      : (nbaGenericBgPath || '');
-    const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.png`);
-    const posterPayload = buildClassicPosterPayload(gamesRows, teamsMap, lang, classicData.sourceData, translationsMap, copyConfig);
-    await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+    const bgPath = verticalBgPath;
+    const fileName = `${outputPrefixWithDate}_1-1_${lang}.jpg`;
+    const outputPath = path.join(dateDir, fileName);
+    const posterPayload = buildClassicPosterPayload(gamesRows, teamsMap, lang, classicData.sourceData, translationsMap, copyConfig, { layout: 'vertical' });
+    await generatePoster(page, verticalTemplate, posterPayload, bgPath, outputPath, {
+      viewportWidth: 1200,
+      viewportHeight: 1200,
+      outputWidth: 1200,
+      outputHeight: 1200
+    });
+    generatedFiles.push(fileName);
+  }
+
+  if (horizontalTemplate) {
+    console.log(`\n生成横版 2:1 海报（${langsToGenerate.length} 个语种）：`);
+    for (const lang of langsToGenerate) {
+      const fileName = `${outputPrefixWithDate}_2-1_${lang}.jpg`;
+      const outputPath = path.join(dateDir, fileName);
+      const posterPayload = buildClassicPosterPayload(gamesRows, teamsMap, lang, classicData.sourceData, translationsMap, copyConfig, { layout: 'horizontal' });
+      await generatePoster(page, horizontalTemplate, posterPayload, horizontalBgPath, outputPath, {
+        viewportWidth: 2400,
+        viewportHeight: 1200,
+        outputWidth: 2400,
+        outputHeight: 1200
+      });
+      generatedFiles.push(fileName);
+    }
   }
 
   await browser.close();
-  buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.png`));
+
+  // 打包所有生成的文件到同一个 zip
+  const zipName = `${outputPrefixWithDate}.zip`;
+  const zipPath = path.join(dateDir, zipName);
+  if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+  const quotedFiles = generatedFiles.map(f => `"${f}"`).join(' ');
+  execSync(`cd "${dateDir}" && zip "${zipName}" ${quotedFiles}`);
+  const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
+  console.log(`\n📦 ${zipName} (${zipKB}KB)`);
+  console.log(`所有图片已保存到：${dateDir}\n`);
 }
 
 main().catch(err => {
