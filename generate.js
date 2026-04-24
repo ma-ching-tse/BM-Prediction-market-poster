@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const MAX_SIZE_KB = 300;
+const MAX_SIZE_KB = 280;
 const POLYMARKET_BASE_URL = 'https://gamma-api.polymarket.com';
 
 // ── sharp 方案：缩放到指定尺寸，并对 JPEG 质量进行二分，逼近 maxKB 上限 ──
@@ -1325,11 +1325,19 @@ function buildClassicPosterPayload(gamesRows, teamsMap, lang, sourceData, transl
 
   const baseGames = buildGamesData(gamesRows, teamsMap, lang);
   const translatedMatchTexts = Array.isArray(translated.matchTexts) ? translated.matchTexts : [];
-  const games = baseGames.map((game, idx) => ({
-    ...game,
-    reward: String(translatedMatchTexts[idx]?.reward ?? '').trim(),
-    news: String(translatedMatchTexts[idx]?.news ?? '').trim()
-  }));
+  const games = baseGames.map((game, idx) => {
+    const rawReward = String(translatedMatchTexts[idx]?.reward ?? '').trim();
+    // 用劣势一方的胜率（较低那个）替换 reward 文案中的第一个 NNU 占位数字
+    const homePct = Number(game.homeTeam?.winRate) || 0;
+    const awayPct = Number(game.awayTeam?.winRate) || 0;
+    const underdogPct = Math.min(homePct, awayPct);
+    const reward = rawReward.replace(/\d+(?=\s*U)/, String(underdogPct));
+    return {
+      ...game,
+      reward,
+      news: String(translatedMatchTexts[idx]?.news ?? '').trim()
+    };
+  });
 
   const copy = layout === 'horizontal'
     ? {
