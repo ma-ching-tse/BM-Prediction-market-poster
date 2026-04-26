@@ -4333,11 +4333,16 @@ function prepareOutputDir(date, subDir) {
 }
 
 async function launchBrowser() {
-  return puppeteer.launch({
+  const macChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  // 本机有系统 Chrome（Mac 开发用）就走它；否则交给 Puppeteer 自带 Chromium（Linux 服务器场景）
+  const opts = {
     headless: 'new',
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files']
-  });
+  };
+  if (process.platform === 'darwin' && fs.existsSync(macChrome)) {
+    opts.executablePath = macChrome;
+  }
+  return puppeteer.launch(opts);
 }
 
 function buildZip(dateDir, outputPrefixWithDate, bgFiles) {
