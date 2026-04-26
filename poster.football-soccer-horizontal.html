@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>足球赛事海报（横版 2:1）</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 2400px;
+      height: 1200px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #poster {
+      position: relative;
+      width: 2400px;
+      height: 1200px;
+      overflow: hidden;
+      font-family: "MiSans VF", "HarmonyOS Sans", "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    .bg-image {
+      position: absolute;
+      left: -1px;
+      top: -1px;
+      width: 2401px;
+      height: 1200px;
+      object-fit: cover;
+    }
+
+    .poster-copy {
+      position: absolute;
+      left: 120px;
+      top: 120px;
+      width: var(--poster-title-width, 1008px);
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      color: #fff;
+      z-index: 2;
+    }
+
+    .poster-title {
+      font-size: var(--poster-title-size, 150px);
+      line-height: var(--poster-title-line-height, 1.2);
+      font-weight: 900;
+      letter-spacing: 0;
+      text-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    }
+
+    .poster-subtitle {
+      font-size: var(--poster-subtitle-size, 56px);
+      line-height: var(--poster-subtitle-line-height, 1.3);
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .right-column {
+      position: absolute;
+      left: 1208px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 1072px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      z-index: 2;
+    }
+
+    .game-card {
+      width: 100%;
+      height: 252px;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid #5d5d5d;
+      border-radius: 20px;
+      padding: 24px 20px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .logo-slot {
+      flex-shrink: 0;
+      width: 200px;
+      height: 204px;
+      border-radius: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-slot img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .game-info {
+      flex: 1;
+      min-width: 0;
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .match-date {
+      font-size: 28px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 40px;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .game-matchup {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .team-name {
+      flex: 1;
+      min-width: 0;
+      font-size: 36px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .team-name.home { text-align: left; }
+    .team-name.away { text-align: right; }
+
+    .wdl-bar {
+      width: 100%;
+      height: 40px;
+      border-radius: 20px;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.06);
+      box-shadow: 0 0 15.8px 0 rgba(243, 243, 243, 0.1);
+    }
+
+    .wdl-seg {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .wdl-win {
+      background: linear-gradient(90deg, #1ddce2 0%, #17b8be 100%);
+      border-radius: 20px 0 0 20px;
+    }
+
+    .wdl-draw {
+      background: linear-gradient(90deg, #7a8691 0%, #6b7882 100%);
+    }
+
+    .wdl-loss {
+      background: linear-gradient(90deg, #2bdb7e 0%, #22c46b 100%);
+      border-radius: 0 20px 20px 0;
+    }
+
+    .wdl-label {
+      font-size: 22px;
+      font-weight: 700;
+      color: rgba(0, 0, 0, 0.78);
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    /* 顶部反光高光 */
+    .wdl-bar::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 4px;
+      height: 14px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 100%);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .poster-footer {
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      padding: 12px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand-logo {
+      position: absolute;
+      left: 120px;
+      bottom: 120px;
+      width: 366px;
+      height: 88px;
+      z-index: 2;
+    }
+    .brand-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="poster">
+    <img class="bg-image" id="bg-image" src="backgrounds-football-horizontal/bg.png" alt="" />
+    <div class="poster-copy" id="poster-copy">
+      <div class="poster-title" id="poster-title"></div>
+      <div class="poster-subtitle" id="poster-subtitle"></div>
+    </div>
+    <div class="right-column" id="right-column">
+      <!-- 由 JS 动态渲染：3 张卡片 + footer -->
+    </div>
+    <div class="brand-logo">
+      <img src="assets/bitmart-logo-horizontal.png" alt="BitMart" />
+    </div>
+  </div>
+
+  <script>
+    // 预览用默认数据（generate.js 会注入 window.GAMES_DATA 覆盖它）
+    const PREVIEW_DATA = {
+      copy: {
+        title: "欧洲5大联赛",
+        subtitle: "预测比赛，赢取奖励",
+        footer: "立即加入：预测市场 – 体育 – 足球",
+        titleFontSize: 150,
+        titleLineHeight: 1.2,
+        titleMaxWidth: 1008,
+        subtitleFontSize: 56,
+        subtitleLineHeight: 1.3
+      },
+      games: [
+        {
+          matchDate: "2026-04-15",
+          homeTeam: { name: "拜仁", logo: "assets/logos/足球赛事/五大联赛/拜仁慕尼黑.png", winRate: 63 },
+          awayTeam: { name: "皇马", logo: "assets/logos/足球赛事/五大联赛/皇家马德里.png", winRate: 20 },
+          drawRate: 17
+        },
+        {
+          matchDate: "2026-04-15",
+          homeTeam: { name: "阿森纳", logo: "assets/logos/足球赛事/欧冠/阿森纳.png", winRate: 65 },
+          awayTeam: { name: "竞技里斯本", logo: "assets/logos/足球赛事/欧冠/里斯本竞技.png", winRate: 13 },
+          drawRate: 22
+        },
+        {
+          matchDate: "2026-04-16",
+          homeTeam: { name: "巴萨", logo: "assets/logos/足球赛事/五大联赛/巴塞罗那.png", winRate: 55 },
+          awayTeam: { name: "马竞", logo: "assets/logos/足球赛事/五大联赛/马德里竞技.png", winRate: 25 },
+          drawRate: 20
+        }
+      ]
+    };
+
+    const data = window.GAMES_DATA || PREVIEW_DATA;
+
+    if (window.BG_PATH) {
+      document.getElementById('bg-image').src = window.BG_PATH;
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function toRate(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return 0;
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    // 将 YYYY-MM-DD 统一格式化为 YYYY/MM/DD
+    function formatMatchDate(raw) {
+      if (!raw) return '';
+      const s = String(raw).trim();
+      const m = s.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+      if (!m) return s;
+      const year = m[1];
+      const month = String(parseInt(m[2], 10)).padStart(2, '0');
+      const day = String(parseInt(m[3], 10)).padStart(2, '0');
+      return `${year}/${month}/${day}`;
+    }
+
+    function applyCopy(copy) {
+      const titleEl = document.getElementById('poster-title');
+      const subtitleEl = document.getElementById('poster-subtitle');
+      const root = document.getElementById('poster');
+      if (!copy || !titleEl || !subtitleEl || !root) return;
+
+      titleEl.textContent = copy.title || '';
+      subtitleEl.textContent = copy.subtitle || '';
+
+      root.style.setProperty('--poster-title-size', `${Number(copy.titleFontSize || 150)}px`);
+      root.style.setProperty('--poster-title-line-height', String(copy.titleLineHeight || 1.2));
+      root.style.setProperty('--poster-title-width', `${Number(copy.titleMaxWidth || 1008)}px`);
+      root.style.setProperty('--poster-subtitle-size', `${Number(copy.subtitleFontSize || 56)}px`);
+      root.style.setProperty('--poster-subtitle-line-height', String(copy.subtitleLineHeight || 1.3));
+
+      fitTitle(copy);
+      fitSubtitle(copy);
+    }
+
+    // 大标题自适应：若超出两行则缩小字号，确保两行内完整显示
+    function fitTitle(copy) {
+      const root = document.getElementById('poster');
+      const titleEl = document.getElementById('poster-title');
+      if (!root || !titleEl) return;
+
+      const baseFontSize = Number(copy.titleFontSize || 150);
+      const lineHeight = Number(copy.titleLineHeight || 1.2);
+      const maxH = (fs) => Math.ceil(fs * lineHeight * 2) + 20;
+
+      root.style.setProperty('--poster-title-size', `${baseFontSize}px`);
+      titleEl.style.maxHeight = 'none';
+      void titleEl.offsetHeight;
+      if (titleEl.scrollHeight <= maxH(baseFontSize)) {
+        titleEl.style.maxHeight = `${maxH(baseFontSize)}px`;
+        titleEl.style.overflow = 'hidden';
+        return;
+      }
+
+      let lo = Math.max(60, Math.round(baseFontSize * 0.5));
+      let hi = baseFontSize;
+      let chosen = lo;
+
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        root.style.setProperty('--poster-title-size', `${mid}px`);
+        titleEl.style.maxHeight = 'none';
+        void titleEl.offsetHeight;
+        if (titleEl.scrollHeight <= maxH(mid)) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+
+      root.style.setProperty('--poster-title-size', `${chosen}px`);
+      titleEl.style.maxHeight = `${maxH(chosen)}px`;
+      titleEl.style.overflow = 'hidden';
+    }
+
+    // 副标题保持单行：过长时自动缩小字号
+    function fitSubtitle(copy) {
+      const root = document.getElementById('poster');
+      const subtitleEl = document.getElementById('poster-subtitle');
+      if (!root || !subtitleEl) return;
+
+      const baseFontSize = Number(copy.subtitleFontSize || 56);
+      const minFontSize = 28;
+      root.style.setProperty('--poster-subtitle-size', `${baseFontSize}px`);
+      subtitleEl.style.textOverflow = 'clip';
+      void subtitleEl.offsetWidth;
+
+      if (subtitleEl.scrollWidth <= subtitleEl.clientWidth + 1) return;
+
+      let lo = minFontSize;
+      let hi = baseFontSize;
+      let chosen = minFontSize;
+      while (lo <= hi) {
+        const mid = Math.round((lo + hi) / 2);
+        root.style.setProperty('--poster-subtitle-size', `${mid}px`);
+        void subtitleEl.offsetWidth;
+        if (subtitleEl.scrollWidth <= subtitleEl.clientWidth + 1) {
+          chosen = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      root.style.setProperty('--poster-subtitle-size', `${chosen}px`);
+    }
+
+    function renderWdlBar(winRate, drawRate, lossRate) {
+      // 归一化，确保三者之和 = 100
+      const total = winRate + drawRate + lossRate;
+      const scale = total > 0 ? 100 / total : 1;
+      const w = Math.round(winRate * scale);
+      const d = Math.round(drawRate * scale);
+      const l = 100 - w - d;
+      return `
+        <div class="wdl-bar">
+          <div class="wdl-seg wdl-win" style="width:${w}%">
+            <span class="wdl-label">${w}%</span>
+          </div>
+          <div class="wdl-seg wdl-draw" style="width:${d}%">
+            <span class="wdl-label">${d}%</span>
+          </div>
+          <div class="wdl-seg wdl-loss" style="width:${l}%">
+            <span class="wdl-label">${l}%</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRightColumn(games, footer) {
+      const container = document.getElementById('right-column');
+      const count = Math.min((games || []).length, 3);
+      const cardsHtml = Array.from({ length: count }).map((_, i) => {
+        const g = games[i] || {};
+        const homeWin = toRate(g.homeTeam?.winRate);
+        const awayWin = toRate(g.awayTeam?.winRate);
+        const draw = toRate(g.drawRate);
+        const homeName = String(g.homeTeam?.name || '').trim();
+        const awayName = String(g.awayTeam?.name || '').trim();
+        const homeLogo = String(g.homeTeam?.logo || '').trim();
+        const awayLogo = String(g.awayTeam?.logo || '').trim();
+        const matchDate = formatMatchDate(String(g.matchDate || '').trim());
+        return `
+          <div class="game-card">
+            <div class="logo-slot">
+              ${homeLogo ? `<img src="${escapeHtml(homeLogo)}" alt="${escapeHtml(homeName)}" />` : ''}
+            </div>
+            <div class="game-info">
+              ${matchDate ? `<div class="match-date">${escapeHtml(matchDate)}</div>` : '<div class="match-date">&nbsp;</div>'}
+              <div class="game-matchup">
+                <div class="team-name home">${escapeHtml(homeName)}</div>
+                <div class="team-name away">${escapeHtml(awayName)}</div>
+              </div>
+              ${renderWdlBar(homeWin, draw, awayWin)}
+            </div>
+            <div class="logo-slot">
+              ${awayLogo ? `<img src="${escapeHtml(awayLogo)}" alt="${escapeHtml(awayName)}" />` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      const footerHtml = footer
+        ? `<div class="poster-footer">${escapeHtml(footer)}</div>`
+        : '';
+
+      container.innerHTML = cardsHtml + footerHtml;
+    }
+
+    applyCopy(data.copy || PREVIEW_DATA.copy);
+    renderRightColumn(data.games, (data.copy || PREVIEW_DATA.copy).footer);
+  </script>
+</body>
+</html>

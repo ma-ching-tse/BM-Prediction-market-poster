@@ -98,6 +98,8 @@ const TEMPLATE_CONFIGS = {
   football: {
     aliases: ['football', 'soccer', 'football-soccer', '足球', '足球赛事'],
     file: path.join(BASE_DIR, 'poster.football-soccer.html'),
+    horizontalFile: path.join(BASE_DIR, 'poster.football-soccer-horizontal.html'),
+    horizontalBgDir: path.join(BASE_DIR, 'backgrounds-football-horizontal'),
     outputPrefix: '足球赛事',
     outputSubDir: '足球赛事',
     bgDir: WORLD_CUP_BG_DIR,
@@ -4650,26 +4652,77 @@ async function main() {
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const horizontalFile = templateConfig.horizontalFile;
+    const horizontalTemplate = horizontalFile && fs.existsSync(horizontalFile)
+      ? fs.readFileSync(horizontalFile, 'utf8')
+      : '';
+
+    // 横版背景：所有语言共用一张图（取 horizontalBgDir 下第一张图）
+    let horizontalBgPath = '';
+    const horizontalBgDir = templateConfig.horizontalBgDir;
+    if (horizontalTemplate && horizontalBgDir && fs.existsSync(horizontalBgDir)) {
+      const horizontalBgFiles = fs.readdirSync(horizontalBgDir).filter(f => /\.(png|jpg|jpeg)$/i.test(f));
+      if (horizontalBgFiles.length > 0) {
+        horizontalBgPath = path.join(horizontalBgDir, horizontalBgFiles[0]);
+      }
+    }
+    if (horizontalTemplate && !horizontalBgPath) {
+      console.warn('⚠️  未找到横版背景图（backgrounds-football-horizontal/），横版将使用纯黑背景');
+    }
+
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
     const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
 
     const browser = await launchBrowser();
     const page = await browser.newPage();
-    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
-    console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+    const generatedFiles = [];
+
+    console.log(`\n生成竖版 1:1 海报（${langsToGenerate.length} 个语种）：`);
     for (const lang of langsToGenerate) {
       const bgPath = footballHasLangBg
         ? (footballLangBgMap[lang] || footballGenericBgPath || '')
         : (footballGenericBgPath || '');
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
+      const fileName = `${outputPrefixWithDate}_1-1_${lang}.jpg`;
+      const outputPath = path.join(dateDir, fileName);
       const posterPayload = buildFootballPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig);
-      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath, {
+        viewportWidth: 1200,
+        viewportHeight: 1200,
+        outputWidth: 1200,
+        outputHeight: 1200
+      });
+      generatedFiles.push(fileName);
+    }
+
+    if (horizontalTemplate) {
+      console.log(`\n生成横版 2:1 海报（${langsToGenerate.length} 个语种）：`);
+      for (const lang of langsToGenerate) {
+        const fileName = `${outputPrefixWithDate}_2-1_${lang}.jpg`;
+        const outputPath = path.join(dateDir, fileName);
+        const posterPayload = buildFootballPosterPayload(gamesRows, teamsMap, lang, sourceData, translationsMap, copyConfig);
+        await generatePoster(page, horizontalTemplate, posterPayload, horizontalBgPath, outputPath, {
+          viewportWidth: 2400,
+          viewportHeight: 1200,
+          outputWidth: 2400,
+          outputHeight: 1200
+        });
+        generatedFiles.push(fileName);
+      }
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(lang => `${lang}.jpg`));
+
+    // 打包所有生成的文件到同一个 zip
+    const zipName = `${outputPrefixWithDate}.zip`;
+    const zipPath = path.join(dateDir, zipName);
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    const quotedFiles = generatedFiles.map(f => `"${f}"`).join(' ');
+    execSync(`cd "${dateDir}" && zip "${zipName}" ${quotedFiles}`);
+    const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
+    console.log(`\n📦 ${zipName} (${zipKB}KB)`);
+    console.log(`所有图片已保存到：${dateDir}\n`);
     return;
   }
 
