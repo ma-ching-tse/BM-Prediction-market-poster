@@ -1,0 +1,25 @@
+; /etc/systemd/system/poster.service
+; 安装步骤：
+;   sudo cp deploy/poster.service /etc/systemd/system/poster.service
+;   sudo systemctl daemon-reload
+;   sudo systemctl enable --now poster.service
+; 查看状态：systemctl status poster.service
+; 查看日志：tail -f /var/log/poster.log
+[Unit]
+Description=Poster Generator
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/poster
+ExecStart=/usr/bin/node proxy.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=DAILY_QUOTA=30
+StandardOutput=append:/var/log/poster.log
+StandardError=append:/var/log/poster.log
+
+[Install]
+WantedBy=multi-user.target

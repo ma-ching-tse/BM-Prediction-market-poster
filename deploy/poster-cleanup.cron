@@ -1,0 +1,7 @@
+# /etc/cron.d/poster-cleanup
+# 安装位置：服务器 /etc/cron.d/poster-cleanup（chmod 644）
+# 作用：每天 03:00（UTC，北京时间 11:00）清理 /opt/poster/output 下超过 7 天的日期目录
+# 路径结构：/opt/poster/output/<模版名>/<YYYYMMDD>/，只删第二层日期目录
+# 日志：/var/log/poster-cleanup.log
+
+0 3 * * * root find /opt/poster/output -mindepth 2 -maxdepth 2 -type d -mtime +7 -exec rm -rf {} + >> /var/log/poster-cleanup.log 2>&1
