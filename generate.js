@@ -1301,18 +1301,30 @@ function buildGamesData(gamesRows, teamsMap, lang) {
       warnOnce(`logo-missing:${awayId}`, `找不到球队 Logo：${awayId}`);
     }
 
+    const homeSeriesWins = row.home_series_wins;
+    const awaySeriesWins = row.away_series_wins;
+    const hasSeriesWins = homeSeriesWins !== undefined && homeSeriesWins !== null && homeSeriesWins !== ''
+      && awaySeriesWins !== undefined && awaySeriesWins !== null && awaySeriesWins !== '';
+
+    const homeTeam = {
+      name:    teamsMap[homeId]?.[lang] ?? teamsMap[homeId]?.['en'] ?? homeId,
+      logo:    homeLogo ?? '',
+      winRate: Number(row.home_win)
+    };
+    const awayTeam = {
+      name:    teamsMap[awayId]?.[lang] ?? teamsMap[awayId]?.['en'] ?? awayId,
+      logo:    awayLogo ?? '',
+      winRate: Number(row.away_win)
+    };
+    if (hasSeriesWins) {
+      homeTeam.seriesWins = Number(homeSeriesWins);
+      awayTeam.seriesWins = Number(awaySeriesWins);
+    }
+
     return {
       date: row.date,
-      homeTeam: {
-        name:    teamsMap[homeId]?.[lang] ?? teamsMap[homeId]?.['en'] ?? homeId,
-        logo:    homeLogo ?? '',
-        winRate: Number(row.home_win)
-      },
-      awayTeam: {
-        name:    teamsMap[awayId]?.[lang] ?? teamsMap[awayId]?.['en'] ?? awayId,
-        logo:    awayLogo ?? '',
-        winRate: Number(row.away_win)
-      }
+      homeTeam,
+      awayTeam
     };
   });
 }
@@ -1620,6 +1632,87 @@ function resolveTeamIdFromTextSegment(text, teamsMap) {
   return best.teamId;
 }
 
+function escapeRegexLiteral(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 从 Polymarket eventMetadata.context_description 里提取 NBA 季后赛系列赛大比分
+// 描述里通常会有 "Cavaliers hold a 2-1 lead..." / "tied at 1-1" / "Lakers trail 1-3" 这类表述
+// 数字限制在 0-4 之间，避免误匹配单场比分（如 "126-104 rout"）
+function extractNbaSeriesWinsFromDescription(description, homeTeamId, awayTeamId, teamsMap) {
+  const text = String(description ?? '').trim();
+  if (!text) return null;
+
+  const homeAliases = collectEnglishTeamAliases(homeTeamId, teamsMap);
+  const awayAliases = collectEnglishTeamAliases(awayTeamId, teamsMap);
+  if (homeAliases.length === 0 || awayAliases.length === 0) return null;
+
+  const teamGroup = [...new Set([...homeAliases, ...awayAliases])]
+    .map(escapeRegexLiteral)
+    .join('|');
+  if (!teamGroup) return null;
+
+  const matchedIsHome = alias => homeAliases.some(a => a.toLowerCase() === alias.toLowerCase());
+
+  // 平局："tied (at) N-N"
+  const tied = text.match(/\btied\s+(?:at\s+)?([0-4])-([0-4])\b/i);
+  if (tied && tied[1] === tied[2]) {
+    const n = Number(tied[1]);
+    return { home: n, away: n };
+  }
+
+  // "<队>(, who) (currently/now/still) hold/holds/lead/leads/are up ... N-M"
+  // 必须紧挨动词（避免误把 "the 76ers face... the Celtics, who lead 2-1" 中的 76ers 当主语）
+  const leadRe = new RegExp(
+    `\\b(${teamGroup})\\b(?:,?\\s+who)?\\s+(?:currently\\s+|now\\s+|still\\s+)?(?:hold|holds|holding|lead|leads|leading|are\\s+up)\\b[^.]{0,80}?\\b([0-4])-([0-4])\\b`,
+    'i'
+  );
+  const lead = text.match(leadRe);
+  if (lead) {
+    const big = Math.max(Number(lead[2]), Number(lead[3]));
+    const small = Math.min(Number(lead[2]), Number(lead[3]));
+    if (big !== small) {
+      return matchedIsHome(lead[1]) ? { home: big, away: small } : { home: small, away: big };
+    }
+  }
+
+  // "<队>(, who) trail/trails/are down ... N-M"
+  const trailRe = new RegExp(
+    `\\b(${teamGroup})\\b(?:,?\\s+who)?\\s+(?:currently\\s+|now\\s+|still\\s+)?(?:trail|trails|trailing|are\\s+down)\\b[^.]{0,80}?\\b([0-4])-([0-4])\\b`,
+    'i'
+  );
+  const trail = text.match(trailRe);
+  if (trail) {
+    const big = Math.max(Number(trail[2]), Number(trail[3]));
+    const small = Math.min(Number(trail[2]), Number(trail[3]));
+    if (big !== small) {
+      return matchedIsHome(trail[1]) ? { home: small, away: big } : { home: big, away: small };
+    }
+  }
+
+  return null;
+}
+
+function collectEnglishTeamAliases(teamId, teamsMap) {
+  const team = teamsMap?.[teamId] ?? {};
+  const out = [];
+  const en = String(team.en ?? '').trim();
+  if (en) {
+    out.push(en);
+    const parts = en.split(/\s+/);
+    if (parts.length > 1) out.push(parts[parts.length - 1]);
+  }
+  return out;
+}
+
+function extractNbaSeriesWinsFromMarket(market, event, homeTeamId, awayTeamId, teamsMap) {
+  const description =
+    market?.events?.[0]?.eventMetadata?.context_description ??
+    event?.eventMetadata?.context_description ??
+    '';
+  return extractNbaSeriesWinsFromDescription(description, homeTeamId, awayTeamId, teamsMap);
+}
+
 function extractTeamIdsFromMatchQuestion(question, teamsMap) {
   const raw = String(question ?? '').trim();
   if (!raw) return [];
@@ -1790,6 +1883,7 @@ async function resolveClassicMatchFromPolymarketInput(matchInput, teamsMap) {
   }
 
   const date = extractNbaDateFromMarket(market, event);
+  const seriesWins = extractNbaSeriesWinsFromMarket(market, event, homeTeamId, awayTeamId, teamsMap);
   return {
     index: Number(matchInput?.index ?? 0),
     date,
@@ -1797,6 +1891,8 @@ async function resolveClassicMatchFromPolymarketInput(matchInput, teamsMap) {
     away_team: awayTeamId,
     home_win: String(rounded.homeWin),
     away_win: String(rounded.awayWin),
+    home_series_wins: seriesWins ? seriesWins.home : null,
+    away_series_wins: seriesWins ? seriesWins.away : null,
     polymarket_url: rawUrl || buildPolymarketEventUrl(String(event?.slug ?? market?.slug ?? slug)),
     polymarket_slug: String(market?.slug ?? slug).trim()
   };

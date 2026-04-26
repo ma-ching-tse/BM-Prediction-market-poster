@@ -309,8 +309,8 @@
       games: [
         {
           date: "2026-04-09",
-          homeTeam: { name: "凯尔特人", logo: "NBA_icon/波士顿凯尔特人.png", winRate: 58 },
-          awayTeam: { name: "尼克斯",   logo: "NBA_icon/纽约尼克斯.png",    winRate: 42 },
+          homeTeam: { name: "凯尔特人", logo: "NBA_icon/波士顿凯尔特人.png", winRate: 58, seriesWins: 2 },
+          awayTeam: { name: "尼克斯",   logo: "NBA_icon/纽约尼克斯.png",    winRate: 42, seriesWins: 2 },
           reward: "预测正确：28U 赢取 100U",
           news: "文班亚马出战成疑,开拓者能否借机捍卫主场"
         },
@@ -447,6 +447,13 @@
         .replace(/'/g, '&#39;');
     }
 
+    function formatTeamName(team) {
+      const name = String(team?.name ?? '');
+      const wins = team?.seriesWins;
+      const hasWins = wins !== undefined && wins !== null && wins !== '';
+      return hasWins ? `${name}（${wins}）` : name;
+    }
+
     function renderGames(games) {
       const container = document.getElementById('games-container');
       container.innerHTML = games.map(g => {
@@ -465,11 +472,11 @@
             <div class="game-meta">
               <div class="game-date">${escapeHtml(g.date || '')}</div>
               <div class="game-matchup">
-                <div class="team-name home">${escapeHtml(g.homeTeam.name)}</div>
+                <div class="team-name home">${escapeHtml(formatTeamName(g.homeTeam))}</div>
                 <div class="vs-wrap">
                   <img src="assets/vs_new.png" alt="VS" />
                 </div>
-                <div class="team-name away">${escapeHtml(g.awayTeam.name)}</div>
+                <div class="team-name away">${escapeHtml(formatTeamName(g.awayTeam))}</div>
               </div>
             </div>
 
