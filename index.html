@@ -524,7 +524,8 @@
       <span class="topbar-slash">/</span>
       <span class="topbar-page">海报生成器</span>
       <div class="topbar-spacer"></div>
-      <span class="topbar-env">localhost:3002</span>
+      <span class="topbar-env" id="topbar-quota">— / —</span>
+      <span class="topbar-env" id="topbar-host" style="margin-left:8px;">localhost</span>
     </header>
 
     <div class="main">
@@ -548,7 +549,7 @@
               <div class="cdot cdot-g"></div>
             </div>
             <span class="chrome-title">运行日志</span>
-            <button id="btn-open">打开输出文件夹</button>
+            <a id="btn-download" download style="display:none;padding:3px 9px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--fg-2);font-family:'Plus Jakarta Sans',sans-serif;font-size:11px;font-weight:500;cursor:pointer;text-decoration:none;transition:background 0.1s,color 0.1s;">下载 zip</a>
           </div>
           <div class="log-body">
             <div class="log-gutter" id="log-gutter"></div>
@@ -594,8 +595,10 @@
 
     // ── DOM ──
     const btnGenerate  = document.getElementById('btn-generate');
-    const btnOpen      = document.getElementById('btn-open');
+    const btnDownload  = document.getElementById('btn-download');
     const statusText   = document.getElementById('status-text');
+    const topbarHost   = document.getElementById('topbar-host');
+    const topbarQuota  = document.getElementById('topbar-quota');
     const templatesEl  = document.getElementById('templates');
     const logGutter    = document.getElementById('log-gutter');
     const logContent   = document.getElementById('log-content');
@@ -718,25 +721,23 @@
       isRunning = true;
       btnGenerate.disabled = true;
       btnGenerate.classList.add('running');
-      btnOpen.style.display = 'none';
+      btnDownload.style.display = 'none';
       clearLog();
       statusText.innerHTML = badge('running', 'Running');
     }
 
-    function setDone(outputDir) {
+    function setDone(zipPath, filename) {
       isRunning = false;
       btnGenerate.disabled = false;
       btnGenerate.classList.remove('running');
       hideCursor();
       statusText.innerHTML = badge('done', 'Done');
-      if (outputDir) {
-        btnOpen.style.display = 'inline-block';
-        btnOpen.onclick = () => fetch('/api/open-output', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dir: outputDir }),
-        });
+      if (zipPath) {
+        btnDownload.href = `/api/download-zip?path=${encodeURIComponent(zipPath)}`;
+        if (filename) btnDownload.setAttribute('download', filename);
+        btnDownload.style.display = 'inline-block';
       }
+      refreshUsage();
     }
 
     function setError() {
@@ -745,6 +746,19 @@
       btnGenerate.classList.remove('running');
       hideCursor();
       statusText.innerHTML = badge('fail', 'Failed');
+      refreshUsage();
+    }
+
+    // ── Usage / quota ──
+    async function refreshUsage() {
+      try {
+        const r = await fetch('/api/usage');
+        const d = await r.json();
+        topbarQuota.textContent = `今日 ${d.todayCount} / ${d.quota}`;
+        topbarQuota.style.color = (d.quotaRemaining <= 3)
+          ? 'oklch(67% 0.19 25)'
+          : '';
+      } catch {}
     }
 
     function badge(type, label) {
@@ -752,9 +766,22 @@
     }
 
     // ── Generate ──
-    btnGenerate.addEventListener('click', () => {
+    btnGenerate.addEventListener('click', async () => {
       if (!selectedTemplate || isRunning) return;
       if (currentStream) { currentStream.close(); currentStream = null; }
+
+      // Pre-flight: check quota with a HEAD-like fetch via /api/usage so we can
+      // show a clean error before opening the SSE stream.
+      try {
+        const r = await fetch('/api/usage');
+        const d = await r.json();
+        if (d.quotaRemaining <= 0) {
+          setRunning();
+          appendLog(`今日额度已用完（${d.quota} 次/天），明天再试`, 'err');
+          setError();
+          return;
+        }
+      } catch {}
 
       setRunning();
 
@@ -766,9 +793,11 @@
         showCursor();
       };
 
-      es.addEventListener('done', () => {
+      es.addEventListener('done', (e) => {
+        let payload = {};
+        try { payload = JSON.parse(e.data || '{}'); } catch {}
         appendLog('生成完成', 'ok');
-        setDone(selectedTemplate.outputDir);
+        setDone(payload.zipPath, payload.filename);
         es.close();
         currentStream = null;
       });
@@ -789,6 +818,9 @@
       };
     });
 
+    topbarHost.textContent = location.host;
+    refreshUsage();
+    setInterval(refreshUsage, 60_000);
     loadTemplates();
   </script>
 </body>

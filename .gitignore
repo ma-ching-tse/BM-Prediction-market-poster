@@ -5,3 +5,4 @@ output/
 _tmp_poster.html
 _tmp_card_images/
 .claude/worktrees/
+logs/
