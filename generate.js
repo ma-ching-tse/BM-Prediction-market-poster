@@ -1579,20 +1579,27 @@ async function fetchClassicDataFromLark(config, accessToken, sourceLang = 'zh-CN
   };
 }
 
+// 把任意时间戳归一化为 YYYY-MM-DD，按美东时间（America/New_York）取日期。
+// Polymarket 的赛事时间是美东编排的，按 UTC 取会把"美东晚场"错算到次日。
 function coerceDateToYMD(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
 
+  // 已经是 YYYY-MM-DD 文本（如足球 slug 末尾、Lark 表格手填）直接返回，不做时区转换
   const direct = parseDateYMD(raw);
   if (direct) return direct;
 
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
 
-  const y = parsed.getUTCFullYear();
-  const m = String(parsed.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(parsed.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  // 用 en-CA 区域 + America/New_York 时区，输出固定就是 YYYY-MM-DD
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return fmt.format(parsed);
 }
 
 function resolveTeamIdFromTextSegment(text, teamsMap) {
@@ -1761,7 +1768,14 @@ function pickNbaMoneylineMarketFromEvent(event) {
     ?? null;
 }
 
+// NBA 比赛日期：优先从 slug 末尾提取（如 nba-det-orl-2026-04-27 → 2026-04-27），
+// 这就是运营贴 Polymarket 链接里的那个日期，跟海报想要展示的日期天然一致，
+// 不需要任何时区转换。slug 里没日期才退回到时间戳字段（极少数老市场）。
 function extractNbaDateFromMarket(market, event = null) {
+  const slug = String(market?.slug ?? event?.slug ?? '').trim();
+  const slugDateMatch = slug.match(/(\d{4}-\d{2}-\d{2})$/);
+  if (slugDateMatch) return slugDateMatch[1];
+
   const candidates = [
     market?.gameStartTime,
     market?.eventStartTime,
