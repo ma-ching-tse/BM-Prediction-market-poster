@@ -3097,6 +3097,26 @@ async function resolveFootballOddsFromEvent(row, market, teamsMap, eventCache, f
     }
   }
 
+  // 兜底：球队名别名匹配可能因 teamsMap 里的 ID/英文名跟 Polymarket 不一致而失败。
+  // Polymarket 的 event/sub-market slug 结构固定为 {league}-{home}-{away}-{YYYY}-{MM}-{DD}[-{outcome}]，
+  // 用 event slug 的 home/away token 对子市场 slug 末尾段做一次硬匹配，比文本匹配可靠。
+  if (!homeMarket || !awayMarket) {
+    const segs = String(eventSlug).split('-');
+    const dateTail = segs.length >= 6 ? segs.slice(-3).join('-') : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateTail) && segs.length >= 6) {
+      const homeToken = segs[segs.length - 5];
+      const awayToken = segs[segs.length - 4];
+      for (const m of markets) {
+        const subSlug = String(m?.slug ?? '');
+        const lastSeg = subSlug.split('-').pop();
+        if (!lastSeg) continue;
+        if (!homeMarket && lastSeg === homeToken) homeMarket = m;
+        else if (!awayMarket && lastSeg === awayToken) awayMarket = m;
+        else if (!drawMarket && (lastSeg === 'draw' || lastSeg === 'tie')) drawMarket = m;
+      }
+    }
+  }
+
   if (!homeMarket || !awayMarket || !drawMarket) return null;
 
   const homeProb = getYesProbabilityFromMarket(homeMarket);
