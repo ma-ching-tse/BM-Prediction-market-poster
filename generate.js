@@ -3967,31 +3967,38 @@ async function fetchFootballDataFromLark(config, accessToken, sheetId, sourceLan
     return '';
   }
 
+  // 解析 Moneyline 列："主胜,平,客胜"（如 "50,26,26"）。逗号可中英文，空格随意。
+  function parseMoneylineCell(cell) {
+    const raw = String(cell ?? '').trim();
+    if (!raw) return null;
+    const parts = raw.split(/[,，\s]+/).map(s => s.replace('%', '').trim()).filter(Boolean);
+    if (parts.length < 3) return null;
+    const [home, draw, away] = parts.map(p => Number(p));
+    if (![home, draw, away].every(Number.isFinite)) return null;
+    return { home: String(home), draw: String(draw), away: String(away) };
+  }
+
   const gamesRows = [];
   for (let i = 1; i <= 3; i++) {
     const homeTeam = getCell(sourceRow, `match${i}_home`);
     const awayTeam = getCell(sourceRow, `match${i}_away`);
     const matchDate = getCell(sourceRow, `match${i}_date`);
-    const homeWin = getCell(sourceRow, `match${i}_home_win`);
-    const awayWin = getCell(sourceRow, `match${i}_away_win`);
+
+    // 新规则：优先读 Moneyline{i} 列（手填 "主胜,平,客胜"）。
+    // 兼容旧表格的 match{i}_home_win / match{i}_away_win / match{i}_draw_win 三列。
+    const moneylineCell = getCell(sourceRow, `Moneyline${i}`)
+      || getCell(sourceRow, `moneyline${i}`)
+      || getCell(sourceRow, `match${i}_moneyline`);
+    const parsed = parseMoneylineCell(moneylineCell);
+    const homeWin = parsed ? parsed.home : getCell(sourceRow, `match${i}_home_win`);
+    const drawWin = parsed ? parsed.draw : getCell(sourceRow, `match${i}_draw_win`);
+    const awayWin = parsed ? parsed.away : getCell(sourceRow, `match${i}_away_win`);
 
     const matchLink = getMatchLink(sourceRow, i);
     const slug = normalizePolymarketInputSlug(matchLink);
 
-    if (!homeTeam || !awayTeam) {
-      if (!slug) continue;
-      // link-only row: team info will be fetched from Polymarket
-      gamesRows.push({
-        date: matchDate,
-        home_team: '',
-        away_team: '',
-        polymarket_slug: slug,
-        home_win: '',
-        away_win: '',
-        link_only: true
-      });
-      continue;
-    }
+    // 链接现在仅作运营参考保留，不再用于自动抓数据；空主客队就跳过这行。
+    if (!homeTeam || !awayTeam) continue;
 
     gamesRows.push({
       date: matchDate,
@@ -3999,6 +4006,7 @@ async function fetchFootballDataFromLark(config, accessToken, sheetId, sourceLan
       away_team: awayTeam,
       polymarket_slug: slug,
       home_win: String(homeWin).replace('%', '').trim(),
+      draw_win: String(drawWin).replace('%', '').trim(),
       away_win: String(awayWin).replace('%', '').trim()
     });
   }
@@ -4756,27 +4764,9 @@ async function main() {
 
     const teamsMap = loadTeams(templateConfig.teamsCsv || FOOTBALL_TEAMS_CSV);
 
-    const linkOnlyCount = rawGamesRows.filter(r => r.link_only).length;
-    let resolvedGamesRows = rawGamesRows;
-    if (linkOnlyCount > 0) {
-      console.log(`\n从 Polymarket 链接获取 ${linkOnlyCount} 场比赛数据...`);
-      resolvedGamesRows = await resolveFootballLinkOnlyRows(rawGamesRows, teamsMap);
-    }
-
-    let gamesRows = normalizeGameRowsTeamIds(resolvedGamesRows, teamsMap);
-    const { rows: enrichedRows, enrichedCount, autoMatchedCount } = await enrichRowsWithPolymarketOdds(
-      gamesRows,
-      teamsMap,
-      { sport: 'football', strictNotFound: false, includeDraw: true }
-    );
-    gamesRows = enrichedRows;
-
-    if (enrichedCount > 0) {
-      console.log(`  ✅ 已从 Polymarket 自动更新 ${enrichedCount} 场赔率`);
-    }
-    if (autoMatchedCount > 0) {
-      console.log(`  ✅ 其中 ${autoMatchedCount} 场由主客队+日期自动匹配到 Polymarket 市场`);
-    }
+    // 足球：完全手填模式。日期 / 主胜率 / 平 / 客胜率全部从 Lark 表格读，
+    // Polymarket 链接仅留作运营人工核对，不再用于自动抓数据。
+    let gamesRows = normalizeGameRowsTeamIds(rawGamesRows, teamsMap);
 
     const bgDir = templateConfig.bgDir || WORLD_CUP_BG_DIR;
     const FOOTBALL_KNOWN_LANGS = new Set(['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi']);
@@ -4794,9 +4784,9 @@ async function main() {
       }
     }
     const footballHasLangBg = Object.keys(footballLangBgMap).length > 0;
-    const targetLangs = footballHasLangBg
-      ? Object.keys(footballLangBgMap).filter(l => l !== sourceLang)
-      : FOOTBALL_ALL_TARGET_LANGS;
+    // 海报固定 9 语种产出。背景图按语言找：找不到对应语言专属背景就退回 generic bg.png。
+    // 球队名只有 4 语种（zh-CN/zh-TW/en/ja），其余 5 种由 buildFootballPosterPayload 兜底成英文。
+    const targetLangs = FOOTBALL_ALL_TARGET_LANGS.filter(l => l !== sourceLang);
     const langsToGenerate = [sourceLang, ...targetLangs];
 
     let translationsMap = { [sourceLang]: sourceData };
