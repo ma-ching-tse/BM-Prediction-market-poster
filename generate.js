@@ -60,6 +60,8 @@ const F1_DRIVER_CSV     = path.join(BASE_DIR, 'drivers_f1.csv');
 const F1_DRIVER_ICON_DIR = path.join(BASE_DIR, 'assets', 'logos', 'F1 Driver');
 const BG_DIR       = path.join(BASE_DIR, 'backgrounds-NBA');
 const WORLD_CUP_BG_DIR = path.join(BASE_DIR, 'backgrounds- football');
+// 世界杯固定输出 9 个语种，全部用 bg.png 同一张背景；非 CSV 收录的 5 种走 en 兜底
+const WORLD_CUP_LANGS = ['zh-CN', 'zh-TW', 'en', 'ja', 'de', 'es', 'fr', 'pt', 'vi'];
 const GLOBAL_BG_DIR = path.join(BASE_DIR, 'backgrounds-global');
 // 统一固定输出到当前项目目录，避免写到上级目录造成混淆。
 const OUTPUT_DIR = path.join(BASE_DIR, 'output');
@@ -3471,12 +3473,15 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
 
   const MAX_CARDS = 4;
   const cardIndexes = headers
-    .map((header) => {
+    .map((header, headerIdx) => {
       const m = /^(\d+)$/.exec(header);
       if (!m) return null;
       const index = Number(m[1]);
       if (!Number.isInteger(index) || index <= 0) return null;
       if (!headers.includes(`percent_${index}`)) return null;
+      // 必须源数据行该列实际填了卡片文本，否则视为空槽（避免渲染出空卡片＋兜底文案）
+      const cellText = String(row[headerIdx] ?? '').trim();
+      if (!cellText) return null;
       return index;
     })
     .filter((v) => v !== null)
@@ -3502,13 +3507,13 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
     const scenarioType = normalizeConfigKey(scenarioConfig.scenario_type);
     const marketSlugInput = String(scenarioConfig.market_slug || scenarioConfig.market_url || '').trim();
     const cardCount = Math.max(2, Math.min(4, Number(scenarioConfig.card_count) || cards.length || 3));
+    const footballTeamsMap = loadTeams(FOOTBALL_TEAMS_CSV);
 
     if (scenarioType && !['worldcup_winner', 'group_winner'].includes(scenarioType)) {
       warnOnce(`worldcup-scenario-unknown:${scenarioType}`, `未知 scenario_type：${scenarioType}（支持 worldcup_winner / group_winner）`);
     }
 
     if (marketSlugInput) {
-      const footballTeamsMap = loadTeams(FOOTBALL_TEAMS_CSV);
       const autoCards = await buildWorldCupCardsFromPolymarketInput(marketSlugInput, cardCount, footballTeamsMap);
       const key = extractPolymarketSlug(marketSlugInput) || marketSlugInput;
 
@@ -3518,6 +3523,12 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
       } else {
         warnOnce(`worldcup-no-cards:${key}`, `Polymarket 输入未解析出可用卡片：${key}`);
       }
+    }
+
+    // 把每张卡片解析到 football_teams.csv 里的 team 对象，作为后续 logo 和多语种文本的单一可信源
+    for (const card of cards) {
+      const team = resolveWorldCupTeamByOutcome(card.text, footballTeamsMap);
+      if (team) card.team = team;
     }
   }
 
@@ -4348,14 +4359,39 @@ function buildComprehensivePosterPayload(sourceData, translationsMap, lang, copy
         ? 60
         : Number(mergedCopy.cardTextFontSize ?? 40),
       cardTextLineHeight: Number(mergedCopy.cardTextLineHeight ?? 1.2),
-      cards: (translated.cards ?? sourceData.cards).map((card, i) => ({
-        text: sanitizeCardText(card.text),
-        image: templateKey === 'worldcup'
-          ? (String(sourceData.cards?.[i]?.image ?? '').trim()
-            || resolveWorldCupLogoPath(sourceData.cards?.[i]?.text ?? card.text, i))
-          : (String(sourceData.cards?.[i]?.resolvedImage ?? '').trim() || resolveComprehensiveLogoPath(i) || String(defaultCopy.cards?.[i]?.image ?? '').trim()),
-        valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
-      }))
+      cards: (translated.cards ?? sourceData.cards).map((card, i) => {
+        const sourceCard = sourceData.cards?.[i];
+        const team = templateKey === 'worldcup' ? sourceCard?.team : null;
+
+        // 世界杯命中 CSV：4 种支持语种走 CSV 文本，其他语种统一用 en 兜底；logo 走 CSV 路径
+        if (team) {
+          const SUPPORTED = ['zh-CN', 'zh-TW', 'en', 'ja'];
+          const csvText = SUPPORTED.includes(lang)
+            ? (team[lang] || team['en'])
+            : (team['en'] || team['zh-CN']);
+          let csvLogo = '';
+          if (team.logo) {
+            const abs = path.isAbsolute(team.logo) ? team.logo : path.join(BASE_DIR, team.logo);
+            if (fs.existsSync(abs)) csvLogo = `file://${abs}`;
+          }
+          return {
+            text: sanitizeCardText(csvText || card.text),
+            image: csvLogo
+              || String(sourceCard?.image ?? '').trim()
+              || resolveWorldCupLogoPath(sourceCard?.text ?? card.text, i),
+            valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
+          };
+        }
+
+        return {
+          text: sanitizeCardText(card.text),
+          image: templateKey === 'worldcup'
+            ? (String(sourceCard?.image ?? '').trim()
+              || resolveWorldCupLogoPath(sourceCard?.text ?? card.text, i))
+            : (String(sourceCard?.resolvedImage ?? '').trim() || resolveComprehensiveLogoPath(i) || String(defaultCopy.cards?.[i]?.image ?? '').trim()),
+          valueLabel: String(mergedCopy.outcomeLabel ?? 'Yes')
+        };
+      })
     }
   };
 }
@@ -4947,14 +4983,23 @@ async function main() {
     }
 
     const bgDir = templateConfig.bgDir || BG_DIR;
-    const rawBgFiles = scanBgFiles(bgDir);
-    const bgFiles = rawBgFiles.filter((bgFile) => {
-      const lang = path.parse(bgFile).name.toLowerCase();
-      if (templateKey === 'worldcup' && lang === 'bg') return false;
-      return true;
-    });
-    if (bgFiles.length === 0) {
-      throw new Error(`模板 ${templateKey} 没有可用语种背景图`);
+    let bgFiles;
+    let resolveBgPath;
+    if (templateKey === 'worldcup') {
+      // 世界杯固定 9 语种，全部用同一张 bg.png
+      const sharedBg = path.join(bgDir, 'bg.png');
+      if (!fs.existsSync(sharedBg)) {
+        throw new Error(`世界杯模版缺少共享背景图：${sharedBg}`);
+      }
+      bgFiles = WORLD_CUP_LANGS.map(l => `${l}.jpg`); // 仅作为「输出文件名 + 语种枚举」用，bgPath 统一指向 bg.png
+      resolveBgPath = () => sharedBg;
+    } else {
+      const rawBgFiles = scanBgFiles(bgDir);
+      bgFiles = rawBgFiles;
+      if (bgFiles.length === 0) {
+        throw new Error(`模板 ${templateKey} 没有可用语种背景图`);
+      }
+      resolveBgPath = (bgFile) => path.join(bgDir, bgFile);
     }
     // 综合事件使用专属 sourceLang（comprehensiveSourceLang），默认 en；其他模板保持 larkConfig.sourceLang
     const sourceLang = templateKey === 'comprehensive'
@@ -5004,7 +5049,7 @@ async function main() {
     console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
     for (const bgFile of bgFiles) {
       const lang = path.parse(bgFile).name;
-      const bgPath = path.join(bgDir, bgFile);
+      const bgPath = resolveBgPath(bgFile);
       const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
       const posterPayload = buildComprehensivePosterPayload(sourceData, translationsMap, lang, copyConfig, templateKey);
       await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);

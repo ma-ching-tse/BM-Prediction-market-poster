@@ -4,6 +4,21 @@
   <meta charset="UTF-8">
   <title>世界杯海报</title>
   <style>
+    @font-face {
+      font-family: "MiSans";
+      src: url("assets/fonts/MiSans-Regular.woff2") format("woff2");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "MiSans";
+      src: url("assets/fonts/MiSans-Bold.woff2") format("woff2");
+      font-weight: 700;
+      font-style: normal;
+      font-display: block;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -262,7 +277,7 @@
   </div>
 
   <script>
-    const DEFAULT_BRAND_LOGO = "https://www.figma.com/api/mcp/asset/88a5bbf0-8a3e-4588-8a84-cb6ac831fc19";
+    const DEFAULT_BRAND_LOGO = "assets/bitmart-logo-horizontal.png";
 
     const PREVIEW_DATA = {
       games: [
