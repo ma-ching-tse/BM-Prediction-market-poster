@@ -111,6 +111,7 @@ const TEMPLATE_CONFIGS = {
   coinprice: {
     aliases: ['coinprice', 'coin-price', 'coin', '币价预测', '币价'],
     file: path.join(BASE_DIR, 'poster.coin-price.html'),
+    horizontalFile: path.join(BASE_DIR, 'poster.coin-price-horizontal.html'),
     outputPrefix: '币价预测',
     outputSubDir: '币价预测',
     bgDir: GLOBAL_BG_DIR,
@@ -4916,6 +4917,11 @@ async function main() {
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const horizontalFile = templateConfig.horizontalFile;
+    const horizontalTemplate = horizontalFile && fs.existsSync(horizontalFile)
+      ? fs.readFileSync(horizontalFile, 'utf8')
+      : '';
+
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
     const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
@@ -4924,17 +4930,57 @@ async function main() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
-    console.log(`\n生成海报（${bgFiles.length} 个语种）：`);
+    const generatedFiles = [];
+
+    console.log(`\n生成竖版 1:1 海报（${bgFiles.length} 个语种）：`);
     for (const bgFile of bgFiles) {
       const lang = path.parse(bgFile).name;
       const bgPath = path.join(bgDir, bgFile);
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
+      const fileName = `${outputPrefixWithDate}_1-1_${lang}.jpg`;
+      const outputPath = path.join(dateDir, fileName);
       const payload = buildCoinPricePosterPayload(sourceData, translationsMap, lang, templateConfig);
-      await generatePoster(page, htmlTemplate, payload, bgPath, outputPath);
+      await generatePoster(page, htmlTemplate, payload, bgPath, outputPath, {
+        viewportWidth: 1200,
+        viewportHeight: 1200,
+        outputWidth: 1200,
+        outputHeight: 1200
+      });
+      generatedFiles.push(fileName);
+    }
+
+    if (horizontalTemplate) {
+      console.log(`\n生成横版 2:1 海报（${bgFiles.length} 个语种）：`);
+      for (const bgFile of bgFiles) {
+        const lang = path.parse(bgFile).name;
+        // 横版本身是纯黑底，不渲染 bg，但仍把竖版 bgPath 传过去让模版 resolveLang() 提取语种
+        const bgPath = path.join(bgDir, bgFile);
+        const fileName = `${outputPrefixWithDate}_2-1_${lang}.jpg`;
+        const outputPath = path.join(dateDir, fileName);
+        const payload = buildCoinPricePosterPayload(sourceData, translationsMap, lang, templateConfig);
+        // 标题字号在横版要放大（buildCoinPricePosterPayload 默认是竖版尺寸）
+        payload.copy.titleFontSize = 140;
+        payload.copy.titleMaxWidth = 1040;
+        payload.copy.subtitleFontSize = 56;
+        await generatePoster(page, horizontalTemplate, payload, bgPath, outputPath, {
+          viewportWidth: 2400,
+          viewportHeight: 1200,
+          outputWidth: 2400,
+          outputHeight: 1200
+        });
+        generatedFiles.push(fileName);
+      }
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, bgFiles);
+
+    const zipName = `${outputPrefixWithDate}.zip`;
+    const zipPath = path.join(dateDir, zipName);
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    const quotedFiles = generatedFiles.map(f => `"${f}"`).join(' ');
+    execSync(`cd "${dateDir}" && zip "${zipName}" ${quotedFiles}`);
+    const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
+    console.log(`\n📦 ${zipName} (${zipKB}KB)`);
+    console.log(`所有图片已保存到：${dateDir}\n`);
     return;
   }
 
