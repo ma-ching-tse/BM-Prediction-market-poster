@@ -38,7 +38,9 @@
       "key": "coinprice",
       "name": "币价预测",
       "file": "poster.coin-price.html",
+      "horizontalFile": "poster.coin-price-horizontal.html",
       "previewUrl": "http://localhost:3001/poster.coin-price.html",
+      "horizontalPreviewUrl": "http://localhost:3001/poster.coin-price-horizontal.html",
       "outputDir": "output/币价预测/",
       "script": "npm run generate:coinprice"
     },
