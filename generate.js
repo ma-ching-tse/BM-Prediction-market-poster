@@ -130,12 +130,16 @@ const TEMPLATE_CONFIGS = {
   f1: {
     aliases: ['f1', 'f1赛车', 'F1', 'formula1', 'formula-1'],
     file: path.join(BASE_DIR, 'poster.f1.html'),
+    horizontalFile: path.join(BASE_DIR, 'poster.f1-horizontal.html'),
+    horizontalBgDir: path.join(BASE_DIR, 'backgrounds-F1-horizontal'),
     outputPrefix: 'F1',
     outputSubDir: 'F1 车队'
   },
   f1driver: {
     aliases: ['f1driver', 'f1-driver', 'f1车手', 'f1 driver', 'driver'],
     file: path.join(BASE_DIR, 'poster.f1driver.html'),
+    horizontalFile: path.join(BASE_DIR, 'poster.f1driver-horizontal.html'),
+    horizontalBgDir: path.join(BASE_DIR, 'backgrounds-F1-horizontal'),
     outputPrefix: 'F1Driver',
     outputSubDir: 'F1 Driver'
   }
@@ -4758,6 +4762,11 @@ async function main() {
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const horizontalFile = templateConfig.horizontalFile;
+    const horizontalTemplate = horizontalFile && fs.existsSync(horizontalFile)
+      ? fs.readFileSync(horizontalFile, 'utf8')
+      : '';
+
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
     const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
@@ -4766,20 +4775,73 @@ async function main() {
 
     const browser = await launchBrowser();
     const page = await browser.newPage();
-    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
-    console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+    const generatedFiles = [];
+
+    console.log(`\n生成竖版 1:1 海报（${langsToGenerate.length} 个语种）：`);
     for (const lang of langsToGenerate) {
       const bgPath = hasLangBg
         ? (langBgMap[lang] || genericBgPath || '')
         : (genericBgPath || '');
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
+      const fileName = `${outputPrefixWithDate}_1-1_${lang}.jpg`;
+      const outputPath = path.join(dateDir, fileName);
       const posterPayload = buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, copyConfig);
-      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath, {
+        viewportWidth: 1200,
+        viewportHeight: 1200,
+        outputWidth: 1200,
+        outputHeight: 1200
+      });
+      generatedFiles.push(fileName);
+    }
+
+    if (horizontalTemplate) {
+      // 横版背景：优先用 horizontalBgDir 下第一张图（所有语言共用），找不到才回退到竖版背景
+      let horizontalBgPath = '';
+      const horizontalBgDir = templateConfig.horizontalBgDir;
+      if (horizontalBgDir && fs.existsSync(horizontalBgDir)) {
+        const horizontalBgFiles = fs.readdirSync(horizontalBgDir).filter(f => /\.(png|jpg|jpeg)$/i.test(f));
+        if (horizontalBgFiles.length > 0) {
+          horizontalBgPath = path.join(horizontalBgDir, horizontalBgFiles[0]);
+        }
+      }
+      if (!horizontalBgPath) {
+        console.warn('⚠️  未找到横版背景图（backgrounds-F1-horizontal/），横版将复用竖版背景');
+      }
+
+      console.log(`\n生成横版 2:1 海报（${langsToGenerate.length} 个语种）：`);
+      for (const lang of langsToGenerate) {
+        const bgPath = horizontalBgPath || (hasLangBg
+          ? (langBgMap[lang] || genericBgPath || '')
+          : (genericBgPath || ''));
+        const fileName = `${outputPrefixWithDate}_2-1_${lang}.jpg`;
+        const outputPath = path.join(dateDir, fileName);
+        const posterPayload = buildF1PosterPayload(sourceData, translationsMap, f1TeamsMap, lang, copyConfig);
+        // 横版字号需放大（buildF1PosterPayload 默认是竖版尺寸）
+        posterPayload.copy.titleFontSize = 140;
+        posterPayload.copy.titleMaxWidth = 1040;
+        posterPayload.copy.subtitleFontSize = 56;
+        posterPayload.copy.teamNameFontSize = 56;
+        await generatePoster(page, horizontalTemplate, posterPayload, bgPath, outputPath, {
+          viewportWidth: 2400,
+          viewportHeight: 1200,
+          outputWidth: 2400,
+          outputHeight: 1200
+        });
+        generatedFiles.push(fileName);
+      }
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.jpg`));
+
+    const zipName = `${outputPrefixWithDate}.zip`;
+    const zipPath = path.join(dateDir, zipName);
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    const quotedFiles = generatedFiles.map(f => `"${f}"`).join(' ');
+    execSync(`cd "${dateDir}" && zip "${zipName}" ${quotedFiles}`);
+    const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
+    console.log(`\n📦 ${zipName} (${zipKB}KB)`);
+    console.log(`所有图片已保存到：${dateDir}\n`);
     return;
   }
 
@@ -4860,6 +4922,11 @@ async function main() {
     }
 
     const htmlTemplate = fs.readFileSync(templateConfig.file, 'utf8');
+    const horizontalFile = templateConfig.horizontalFile;
+    const horizontalTemplate = horizontalFile && fs.existsSync(horizontalFile)
+      ? fs.readFileSync(horizontalFile, 'utf8')
+      : '';
+
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const dateDir = prepareOutputDir(date, templateConfig.outputSubDir);
     const outputPrefixWithDate = `${templateConfig.outputPrefix}_${date}`;
@@ -4868,20 +4935,72 @@ async function main() {
 
     const browser = await launchBrowser();
     const page = await browser.newPage();
-    await page.setViewport({ width: 1200, height: 1200, deviceScaleFactor: 2 });
 
-    console.log(`\n生成海报（${langsToGenerate.length} 个语种）：`);
+    const generatedFiles = [];
+
+    console.log(`\n生成竖版 1:1 海报（${langsToGenerate.length} 个语种）：`);
     for (const lang of langsToGenerate) {
       const bgPath = hasLangBg
         ? (langBgMap[lang] || genericBgPath || '')
         : (genericBgPath || '');
-      const outputPath = path.join(dateDir, `${outputPrefixWithDate}_${lang}.jpg`);
+      const fileName = `${outputPrefixWithDate}_1-1_${lang}.jpg`;
+      const outputPath = path.join(dateDir, fileName);
       const posterPayload = buildF1DriverPosterPayload(sourceData, translationsMap, driversMap, lang, copyConfig);
-      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath);
+      await generatePoster(page, htmlTemplate, posterPayload, bgPath, outputPath, {
+        viewportWidth: 1200,
+        viewportHeight: 1200,
+        outputWidth: 1200,
+        outputHeight: 1200
+      });
+      generatedFiles.push(fileName);
+    }
+
+    if (horizontalTemplate) {
+      let horizontalBgPath = '';
+      const horizontalBgDir = templateConfig.horizontalBgDir;
+      if (horizontalBgDir && fs.existsSync(horizontalBgDir)) {
+        const horizontalBgFiles = fs.readdirSync(horizontalBgDir).filter(f => /\.(png|jpg|jpeg)$/i.test(f));
+        if (horizontalBgFiles.length > 0) {
+          horizontalBgPath = path.join(horizontalBgDir, horizontalBgFiles[0]);
+        }
+      }
+      if (!horizontalBgPath) {
+        console.warn('⚠️  未找到横版背景图（backgrounds-F1-horizontal/），横版将复用竖版背景');
+      }
+
+      console.log(`\n生成横版 2:1 海报（${langsToGenerate.length} 个语种）：`);
+      for (const lang of langsToGenerate) {
+        const bgPath = horizontalBgPath || (hasLangBg
+          ? (langBgMap[lang] || genericBgPath || '')
+          : (genericBgPath || ''));
+        const fileName = `${outputPrefixWithDate}_2-1_${lang}.jpg`;
+        const outputPath = path.join(dateDir, fileName);
+        const posterPayload = buildF1DriverPosterPayload(sourceData, translationsMap, driversMap, lang, copyConfig);
+        // 横版字号 override（buildF1DriverPosterPayload 默认是竖版尺寸）
+        posterPayload.copy.titleFontSize = 140;
+        posterPayload.copy.titleMaxWidth = 1040;
+        posterPayload.copy.subtitleFontSize = 56;
+        posterPayload.copy.driverNameFontSize = 52;
+        await generatePoster(page, horizontalTemplate, posterPayload, bgPath, outputPath, {
+          viewportWidth: 2400,
+          viewportHeight: 1200,
+          outputWidth: 2400,
+          outputHeight: 1200
+        });
+        generatedFiles.push(fileName);
+      }
     }
 
     await browser.close();
-    buildZip(dateDir, outputPrefixWithDate, langsToGenerate.map(l => `${l}.jpg`));
+
+    const zipName = `${outputPrefixWithDate}.zip`;
+    const zipPath = path.join(dateDir, zipName);
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    const quotedFiles = generatedFiles.map(f => `"${f}"`).join(' ');
+    execSync(`cd "${dateDir}" && zip "${zipName}" ${quotedFiles}`);
+    const zipKB = Math.round(fs.statSync(zipPath).size / 1024);
+    console.log(`\n📦 ${zipName} (${zipKB}KB)`);
+    console.log(`所有图片已保存到：${dateDir}\n`);
     return;
   }
 

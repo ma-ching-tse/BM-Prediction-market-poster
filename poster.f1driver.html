@@ -86,31 +86,6 @@
       z-index: 2;
     }
 
-    /* ── BitMart Logo ── */
-    .brand-logo {
-      position: absolute;
-      left: 933px;
-      top: 54px;
-      width: 204px;
-      height: 71px;
-      object-fit: contain;
-      object-position: right center;
-      z-index: 4;
-    }
-
-    .brand-fallback {
-      position: absolute;
-      right: 64px;
-      top: 62px;
-      font-size: 48px;
-      line-height: 1;
-      color: #d8d8d8;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      display: none;
-      z-index: 4;
-    }
-
     /* ── 标题区 ── */
     .title-wrap {
       position: absolute;
@@ -177,7 +152,7 @@
       z-index: 2;
     }
 
-    /* ── 左侧车手照片区（483×162） ── */
+    /* ── 左侧车手照片区（483×162），黑底，颜色由切图自带的车队品牌色渲染 ── */
     .card-bg {
       position: absolute;
       left: 0;
@@ -185,8 +160,7 @@
       width: 483px;
       height: 162px;
       overflow: hidden;
-      /* 青色渐变背景，匹配 Figma 设计 */
-      background: linear-gradient(90deg, #0bbfbd 0%, #09a09e 40%, rgba(22, 22, 22, 0) 80%);
+      background: #0f0f0f;
       z-index: 1;
     }
 
@@ -315,9 +289,6 @@
     <img id="header-image" class="header-image" alt="" />
     <div class="header-overlay"></div>
 
-    <img id="brand-logo" class="brand-logo" alt="BitMart" />
-    <div id="brand-fallback" class="brand-fallback">BitMart</div>
-
     <div class="title-wrap">
       <div id="title" class="title"></div>
       <div id="subtitle" class="subtitle"></div>
@@ -329,7 +300,6 @@
   </div>
 
   <script>
-    const DEFAULT_BRAND_LOGO = "assets/bitmart-logo-horizontal.png";
     // 预览时走本地代理（避免 CORS），generate.js 注入 GAMES_DATA 时不会走这里
     const POLYMARKET_BASE = window.POLYMARKET_BASE || (
       window.location.hostname === 'localhost' ? `${window.location.protocol}//${window.location.hostname}:3002/api/polymarket` : 'https://gamma-api.polymarket.com'
@@ -457,28 +427,6 @@
       } else {
         imgEl.style.display = 'none';
       }
-    }
-
-    function renderBrand() {
-      const logoEl = document.getElementById('brand-logo');
-      const fallbackEl = document.getElementById('brand-fallback');
-      const logoSrc = String(copy.brandLogo || DEFAULT_BRAND_LOGO).trim();
-
-      if (!logoSrc) {
-        logoEl.style.display = 'none';
-        fallbackEl.style.display = 'block';
-        return;
-      }
-
-      logoEl.src = logoSrc;
-      logoEl.onerror = () => {
-        logoEl.style.display = 'none';
-        fallbackEl.style.display = 'block';
-      };
-      logoEl.onload = () => {
-        logoEl.style.display = 'block';
-        fallbackEl.style.display = 'none';
-      };
     }
 
     function renderGauge(percent) {
@@ -614,7 +562,6 @@
       fitSubtitle();
       renderBgImage();
       renderHeaderImage();
-      renderBrand();
       renderCards();
     }
 
