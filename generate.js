@@ -267,7 +267,9 @@ function loadLarkConfig() {
     f1DriverSheetId: String(config.f1DriverSheetId ?? '').trim(),
     f1DriverSpreadsheetToken: String(config.f1DriverSpreadsheetToken ?? '').trim(),
     sourceLang: String(config.sourceLang ?? 'zh-CN').trim(),
-    anthropicApiKey: String(config.anthropicApiKey ?? '').trim()
+    anthropicApiKey: String(config.anthropicApiKey ?? '').trim(),
+    dashscopeApiKey: String(config.dashscopeApiKey ?? '').trim(),
+    dashscopeModel: String(config.dashscopeModel ?? 'qwen2.5-72b-instruct').trim()
   };
 }
 
@@ -907,7 +909,7 @@ async function translateF1Titles(sourceData, targetLangs, fromLang = 'zh-CN') {
 
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    const translated = await translateBatch(texts, fromLang, lang);
     result[lang] = {
       mainTitle: translated[0],
       subTitle: translated[1],
@@ -1181,7 +1183,7 @@ async function translateF1DriverTitles(sourceData, targetLangs, fromLang = 'zh-C
 
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    const translated = await translateBatch(texts, fromLang, lang);
     result[lang] = {
       mainTitle: translated[0],
       subTitle: translated[1],
@@ -1969,7 +1971,7 @@ async function translateClassicTitles(sourceData, targetLangs, fromLang = 'zh-CN
 
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(allTexts.map(text => translateOneText(text, fromLang, lang)));
+    const translated = await translateBatch(allTexts, fromLang, lang);
     const translatedMatchTexts = [];
     for (let i = 0; i < matchTexts.length; i++) {
       translatedMatchTexts.push({
@@ -3595,7 +3597,145 @@ async function fetchComprehensiveEventsFromLark(config, accessToken, sheetId, sh
   };
 }
 
-// ── 综合事件：调用 MyMemory 免费翻译（无需 API Key）──────────
+// ── 翻译：优先用 Qwen（带品牌词/UI 标签/语气控制），失败降级 MyMemory ──
+const DASHSCOPE_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+
+const TRANSLATE_LANG_NAMES = {
+  'zh-cn': '简体中文',
+  'zh-tw': '繁體中文（台灣慣用詞）',
+  'en': 'English',
+  'ja': '日本語',
+  'vi': 'Tiếng Việt',
+  'fr': 'Français',
+  'es': 'Español',
+  'pt': 'Português (Brasil)',
+  'de': 'Deutsch'
+};
+
+function getLangName(code) {
+  return TRANSLATE_LANG_NAMES[String(code ?? '').trim().toLowerCase()] || String(code ?? '');
+}
+
+function buildTranslateSystemPrompt(fromLang, toLang) {
+  const fromName = getLangName(fromLang);
+  const toName = getLangName(toLang);
+  const target = String(toLang ?? '').trim().toLowerCase();
+
+  const langSpecific = [];
+  if (target === 'zh-tw') {
+    langSpecific.push('使用台灣常用繁體中文寫法（例如「預測」「贏取」「影片」），不要混入簡體字或大陸用詞。');
+  }
+  if (target === 'ja') {
+    langSpecific.push('英文品牌词与币种代码（BTC/ETH/BitMart 等）保留拉丁字母，不要片假名化。');
+  }
+  if (target === 'vi') {
+    langSpecific.push('加密货币术语（Bitcoin、Ethereum、token 等）沿用通用英文写法，不要生造越南语词。');
+  }
+
+  const lines = [
+    `You are a professional localizer for BitMart (a crypto exchange) marketing posters.`,
+    `Translate the source ${fromName} text into ${toName}.`,
+    '',
+    'Strict rules:',
+    '1. Input is a JSON array of strings. Output MUST be a JSON array of the same length, in the same order, no extras, no commentary, no markdown fences. Return JSON only.',
+    '2. Keep these brand / asset / platform names verbatim in Latin script (do not transliterate or translate): BitMart, Polymarket, Bitcoin, Ethereum, Solana, Ripple, Cardano, Dogecoin, BTC, ETH, SOL, XRP, BNB, DOGE, ADA, USDT, USDC, NBA, F1, FIFA, World Cup.',
+    '3. Keep UI labels "Yes" and "No" verbatim — they are button labels, not regular words.',
+    '4. Preserve numbers, percent signs, and currency symbols ($, ¥) as-is.',
+    '5. Tone: punchy marketing CTA — short, energetic, idiomatic. Avoid literal/awkward phrasing.',
+    '6. Localize date/time expressions naturally (e.g. 2026年底 → "by end of 2026" / "fin 2026" depending on target).',
+    '7. Preserve question marks, exclamation points, and emoji exactly.',
+    ...langSpecific.map((s, i) => `${8 + i}. ${s}`)
+  ];
+  return lines.join('\n');
+}
+
+async function qwenTranslateBatch(texts, fromLang, toLang, apiKey, model) {
+  const systemPrompt = buildTranslateSystemPrompt(fromLang, toLang);
+  const userMsg = JSON.stringify(texts);
+
+  const res = await fetch(DASHSCOPE_API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMsg }
+      ],
+      temperature: 0.2,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Qwen API HTTP ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const content = String(data?.choices?.[0]?.message?.content ?? '').trim();
+  if (!content) throw new Error('Qwen 返回内容为空');
+
+  // Qwen 在 json_object 模式下偶尔仍包 ```json``` 围栏；剥掉再解析
+  const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`Qwen 返回不是合法 JSON：${cleaned.slice(0, 200)}`);
+  }
+
+  // 兼容两种格式：直接数组 或 {translations: [...]}
+  const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.translations) ? parsed.translations : null);
+  if (!arr) throw new Error(`Qwen 返回不是数组：${cleaned.slice(0, 200)}`);
+  if (arr.length !== texts.length) {
+    throw new Error(`Qwen 返回数组长度不匹配：期望 ${texts.length}，实际 ${arr.length}`);
+  }
+  return arr.map((s, i) => String(s ?? texts[i]));
+}
+
+let _cachedLarkConfigForTranslate = null;
+function getTranslateConfig() {
+  if (_cachedLarkConfigForTranslate) return _cachedLarkConfigForTranslate;
+  try {
+    _cachedLarkConfigForTranslate = loadLarkConfig();
+  } catch {
+    _cachedLarkConfigForTranslate = { dashscopeApiKey: '', dashscopeModel: 'qwen2.5-72b-instruct' };
+  }
+  return _cachedLarkConfigForTranslate;
+}
+
+async function translateBatch(texts, fromLang, toLang) {
+  const cleaned = texts.map(t => String(t ?? ''));
+  // 全空就直接回，省掉 API 调用
+  if (cleaned.every(t => !t.trim())) return cleaned;
+  // 同语种不翻
+  if (String(fromLang ?? '').trim().toLowerCase() === String(toLang ?? '').trim().toLowerCase()) {
+    return cleaned;
+  }
+
+  const cfg = getTranslateConfig();
+  const apiKey = cfg.dashscopeApiKey;
+  const model = cfg.dashscopeModel || 'qwen2.5-72b-instruct';
+
+  if (apiKey) {
+    try {
+      const result = await qwenTranslateBatch(cleaned, fromLang, toLang, apiKey, model);
+      // 空字符串保持空（避免模型把 "" 翻成无意义内容）
+      return result.map((s, i) => cleaned[i].trim() ? s : cleaned[i]);
+    } catch (err) {
+      console.warn(`  ⚠️  Qwen 翻译失败（${fromLang}→${toLang}），降级 MyMemory：${err.message}`);
+    }
+  }
+
+  // 兜底：逐条 MyMemory
+  return Promise.all(cleaned.map(t => translateOneText(t, fromLang, toLang)));
+}
+
+// ── 综合事件：调用 MyMemory 免费翻译（无需 API Key），作为 Qwen 兜底 ──
 async function translateOneText(text, fromLang, toLang, retries = 3) {
   if (!text) return text;
   const params = new URLSearchParams({ q: text, langpair: `${fromLang}|${toLang}` });
@@ -3632,7 +3772,7 @@ async function translateComprehensiveData(sourceData, targetLangs, fromLang = 'z
 
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    const translated = await translateBatch(texts, fromLang, lang);
     result[lang] = {
       mainTitle: translated[0],
       subTitle: translated[1],
@@ -3709,12 +3849,11 @@ async function translateGlobalCards(sourceCards, targetLangs, fromLang = 'zh-CN'
   const result = {};
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(
-      sourceCards.flatMap(card => [
-        translateOneText(card.title, fromLang, lang),
-        translateOneText(card.desc, fromLang, lang)
-      ])
-    );
+    const flatTexts = sourceCards.flatMap(card => [
+      String(card.title ?? ''),
+      String(card.desc ?? '')
+    ]);
+    const translated = await translateBatch(flatTexts, fromLang, lang);
     result[lang] = sourceCards.map((card, i) => ({
       title: translated[i * 2],
       stat: String(card.stat ?? ''),
@@ -3835,7 +3974,7 @@ async function translateCoinPriceData(sourceData, targetLangs, fromLang = 'zh-CN
   const result = {};
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    const translated = await translateBatch(texts, fromLang, lang);
     result[lang] = {
       mainTitle: translated[0],
       subTitle: translated[1],
@@ -4033,7 +4172,7 @@ async function translateFootballTitles(sourceData, targetLangs, fromLang = 'zh-C
 
   for (const lang of targetLangs) {
     process.stdout.write(`  → 翻译 ${lang}...`);
-    const translated = await Promise.all(texts.map(t => translateOneText(t, fromLang, lang)));
+    const translated = await translateBatch(texts, fromLang, lang);
     result[lang] = {
       mainTitle: translated[0],
       subTitle: translated[1],
