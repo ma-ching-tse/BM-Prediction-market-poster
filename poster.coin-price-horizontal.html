@@ -470,9 +470,15 @@
     function render() {
       const lang = resolveLang();
       renderHeader(lang);
-      fitTitle();
-      fitSubtitle();
       renderCards(lang);
+      // fit* 必须等字体加载完再测量：fallback 字体（PingFang 等）在越南语等多语种上
+      // 比 MiSans 窄，提前测量会误判「能塞下」从而不缩字号，等 MiSans 加载后就溢出。
+      const fit = () => { fitTitle(); fitSubtitle(); };
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(fit);
+      } else {
+        fit();
+      }
     }
 
     render();
