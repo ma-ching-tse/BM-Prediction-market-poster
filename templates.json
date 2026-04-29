@@ -59,7 +59,9 @@
       "key": "f1",
       "name": "F1 车队",
       "file": "poster.f1.html",
+      "horizontalFile": "poster.f1-horizontal.html",
       "previewUrl": "http://localhost:3001/poster.f1.html",
+      "horizontalPreviewUrl": "http://localhost:3001/poster.f1-horizontal.html",
       "outputDir": "output/F1 车队/",
       "script": "npm run generate:f1"
     },
@@ -67,7 +69,9 @@
       "key": "f1driver",
       "name": "F1 车手",
       "file": "poster.f1driver.html",
+      "horizontalFile": "poster.f1driver-horizontal.html",
       "previewUrl": "http://localhost:3001/poster.f1driver.html",
+      "horizontalPreviewUrl": "http://localhost:3001/poster.f1driver-horizontal.html",
       "outputDir": "output/F1 Driver/",
       "script": "npm run generate:f1driver"
     }
